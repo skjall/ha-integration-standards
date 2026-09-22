@@ -31,9 +31,9 @@ MANAGED: dict[str, str] = {
 # What CLAUDE.md needs so the standards reach the assistant working here.
 CLAUDE_IMPORT = "@docs/ha-integration-standards.md"
 
-# The hooks, pointing at the vendored copy. They are local on purpose: this
-# package is private and the integrations are public, so a hook that cloned it
-# would need a token that a fork's pull request never gets.
+# The hooks, pointing at the vendored copy. They are local on purpose: a hook
+# that cloned this package would put a second server between a commit and its
+# verdict, for checks the checkout already carries.
 PRECOMMIT_BLOCK = """  - repo: local
     hooks:
       # Written by ha-integration-standards {version}; `ha-standards sync`

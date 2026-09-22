@@ -516,3 +516,22 @@ def test_a_missing_gh_is_reported_not_raised(
     monkeypatch.setattr(protect, "_gh", refuse)
 
     assert main(["protect", str(project)]) == 1
+
+
+def test_protect_works_in_a_repository_without_an_integration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """This package protects itself with the same command.
+
+    What has to be required is read out of the workflows, and a repository
+    that holds no integration has those too.
+    """
+    from ha_integration_standards.cli import main
+
+    _workflows(tmp_path, quality=QUALITY)
+    (tmp_path / ".git").mkdir()
+
+    assert main(["protect", "--dry-run", str(tmp_path)]) == 0
+    printed = capsys.readouterr().out
+    assert "lint" in printed
+    assert "test" in printed

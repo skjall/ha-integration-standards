@@ -14,19 +14,22 @@ repository they run against, read what it declares in `manifest.json`,
 
 ## Why the gates are vendored
 
-This package is private; the integrations it checks are public and build on
-GitHub. A hook that cloned this repository, or a CI step that installed it
-from a private index, would need a token — and **a public repository hands no
-secrets to a pull request from a fork**, so every outside contribution would
-go red through no fault of its own. It would also make a green build depend on
-a server that is not reachable from GitHub at all.
-
-So `ha-standards sync` writes the checks *into* the project, under
+`ha-standards sync` writes the checks *into* the project, under
 `scripts/_ha_standards/`, together with the release they came from and a
-SHA-256 of each file. CI then needs nothing but the checkout it already has,
-and a fork's pull request runs exactly the same gates. Editing a vendored
-check to make a commit pass fails `run.py verify`, which runs before the gates
-do.
+SHA-256 of each file. Fetching them instead would buy nothing and cost three
+things:
+
+- **A green build would depend on a second server.** A checkout already has
+  everything; an install step has a network, an index and a version resolver
+  between the commit and its verdict.
+- **Editing a check to make a commit pass would be invisible.** Vendored, it
+  fails `run.py verify`, which hashes every gate and runs before them.
+- **The gates that ran would not be written down.** In the project, the
+  release they came from is part of its history, so an old commit can still be
+  read against the rules it was actually held to.
+
+A fork's pull request runs exactly the same gates, with no token and no access
+to anything.
 
 ## Use it in an existing integration
 

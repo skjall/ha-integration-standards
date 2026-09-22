@@ -1,10 +1,9 @@
 """Write the checks into the project that runs them.
 
-The integrations are public and their CI runs on GitHub; this package is not
-public. A hook that clones it, or a CI step that installs it from a private
-index, would need a token - and a public repository hands no secrets to a
-fork's pull request, so every outside contribution would go red through no
-fault of its own.
+Fetching them instead would put a second server between a commit and its
+verdict - an index, a network, a version resolver - for checks a checkout
+already carries. It would also leave no record: which rules a commit was
+actually held to could no longer be read out of its own history.
 
 So the checks are vendored: `ha-standards sync` writes them into the project,
 under one directory that nobody edits by hand, together with the version they
