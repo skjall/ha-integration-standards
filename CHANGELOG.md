@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.1](https://github.com/skjall/ha-integration-standards/compare/v0.3.0...v0.3.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* **check:** run in a repository that holds no integration ([41eedd1](https://github.com/skjall/ha-integration-standards/commit/41eedd1a159347fe977c8e1fe4e861389777df72))
+* **check:** run in a repository that holds no integration ([e5e13e7](https://github.com/skjall/ha-integration-standards/commit/e5e13e7303c7f3066c26984f0e6d6a5dadce4ddc))
+
 ## [0.3.0](https://github.com/skjall/ha-integration-standards/compare/v0.2.0...v0.3.0) (2026-09-22)
 
 
