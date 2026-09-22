@@ -13,7 +13,9 @@ rules:
   appropriate-polling: done
   brands:
     status: todo
-    comment: Needs brand/icon.png.
+    comment: >-
+      Needs brand/icon.png (256) and brand/icon@2x.png (512) in the house
+      style. See "The brand icon" in docs/ha-integration-standards.md.
   common-modules: done
   config-flow: done
   config-flow-test-coverage: done

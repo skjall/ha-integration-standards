@@ -65,6 +65,68 @@ a claim the runtime never repeats. The tier actually met is recorded in
 - **Start the coordinator last.** Forward the platforms first so every entity
   has subscribed, then start polling. The other order loses the first update.
 
+## The brand icon
+
+Every integration ships its own icon, and every icon looks like it came from
+the same place. That recognisability is the point: a user scrolling a list of
+integrations should be able to tell which ones are ours without reading a
+name.
+
+**The icon lives in the integration, not in a pull request.** Since Home
+Assistant 2026.3 a custom integration carries its brand images itself:
+
+```
+custom_components/<domain>/brand/
+├── icon.png       # 256x256
+└── icon@2x.png    # 512x512
+```
+
+No manifest key, no configuration. Local images take precedence over the
+brands CDN, and `custom_integrations/` in home-assistant/brands is marked
+legacy for exactly this reason. Opening a PR there is only right when the
+integration is on its way into core - and then the local images come out
+again.
+
+Two traps:
+
+- **`hacs.json` has to require 2026.3 or newer.** An older floor means the
+  icons ship and are never served. The `quality-scale` gate fails on the
+  mismatch.
+- **A 200 from `brands.home-assistant.io/_/<domain>/icon.png` proves
+  nothing.** That endpoint generates a letter placeholder for any domain it
+  has never heard of. The path without `_/` is the one that returns 404.
+
+### What the icons have in common
+
+- A flat ground in the house colour, edge to edge - no gradient, no border,
+  no transparent margin. It is the single strongest signal that two icons
+  belong together, and it is why the gate reads the corner pixels.
+- The subject in white, the medium in `#9FE2FC`: air, water, radio, a bus.
+  Every icon shows the device *and* the channel Home Assistant talks to it
+  over. That is the thematic bracket, and it costs no space.
+- Cutouts in the ground colour rather than an outline style.
+- Round caps and joins throughout; generous corner radii on tiles and
+  housings.
+- A slight top-down view. A cylinder gets an ellipse of roughly 0.3 axis
+  ratio - at the top **and** at the bottom. A straight edge under an
+  elliptical cap is the one mistake that is visible at any size.
+- A 512 viewBox, the subject centred by measurement rather than by eye.
+
+The ground colour is `#0A7EE8` unless a project says otherwise:
+
+```toml
+[tool.ha_standards]
+brand_color = "#0A7EE8"   # "" turns the colour check off, sizes still apply
+```
+
+### Draw it as a vector, ship it as PNG
+
+The PNG is a build product; the source is an SVG. Keeping it the other way
+round means every later change is a repaint. The gate reads the ground colour
+straight out of the file, so the PNG has to be **8-bit and not interlaced** -
+which is what any normal SVG renderer produces, and the reason the gate can
+check the house style at all instead of taking it on trust.
+
 ## Tests run in Docker, against the targeted Home Assistant
 
 `python3 scripts/_ha_standards/run.py tests` builds `Dockerfile.test` and runs
