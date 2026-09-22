@@ -35,20 +35,30 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
 def cmd_check(args: argparse.Namespace) -> int:
     """Fail when a managed file, or the repository itself, has drifted."""
-    it = _integration(args.path)
     failed = False
 
-    problems = sync.drift(it)
-    if problems:
-        failed = True
-        print("Managed files have drifted from ha-integration-standards\n")
-        for path, reason in sorted(problems.items()):
-            print(f"  FAIL  {path}: {reason}")
-        print("\nRun 'ha-standards sync' to bring them back.\n")
+    # A repository without an integration has no managed files and still has
+    # workflows and a default branch. This package checks itself that way.
+    try:
+        it = find_integration(Path(args.path) if args.path else Path.cwd())
+    except NoIntegrationError:
+        root = _repository_root(args.path)
+        print("Managed files: none, this repository holds no integration.")
     else:
-        print(f"Managed files: in step with ha-integration-standards {__version__}.")
+        root = it.root
+        problems = sync.drift(it)
+        if problems:
+            failed = True
+            print("Managed files have drifted from ha-integration-standards\n")
+            for path, reason in sorted(problems.items()):
+                print(f"  FAIL  {path}: {reason}")
+            print("\nRun 'ha-standards sync' to bring them back.\n")
+        else:
+            print(
+                f"Managed files: in step with ha-integration-standards {__version__}."
+            )
 
-    settings = protect.audit(it.root, args.repo)
+    settings = protect.audit(root, args.repo)
     if settings is None:
         # Nobody is told their commit broke a setting they cannot see.
         print("Repository settings: not checked, GitHub could not be asked.")
