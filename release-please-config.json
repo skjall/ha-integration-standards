@@ -9,10 +9,6 @@
         {
           "type": "generic",
           "path": "src/ha_integration_standards/__init__.py"
-        },
-        {
-          "type": "generic",
-          "path": ".pre-commit-hooks.yaml"
         }
       ]
     }

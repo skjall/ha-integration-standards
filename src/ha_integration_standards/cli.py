@@ -107,6 +107,7 @@ def cmd_new(args: argparse.Namespace) -> int:
 
     it = Integration(root=target, path=target / "custom_components" / args.domain)
     sync.write(it)
+    sync.ensure_precommit(it)
     sync.ensure_claude_import(it)
     print(f"Created {target}\n")
     print("Next:")

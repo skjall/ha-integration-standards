@@ -5,36 +5,53 @@ Shared quality gates for custom Home Assistant integrations.
 An integration's quality tier is easy to claim and easy to lose: a rename, a
 new platform, one `icon="mdi:…"` too many, and `quality_scale.yaml` says
 something the code no longer does. These gates check the claim on every commit
-— and because they live in a package rather than in each repository, raising
-one version number tightens the rules everywhere at once.
+— and because they are written by one tool rather than copied into each
+repository, improving a check once improves it everywhere.
 
 The checks know nothing about any particular integration. They find it in the
 repository they run against, read what it declares in `manifest.json`,
 `quality_scale.yaml`, `strings.json` and `icons.json`, and hold it to that.
 
+## Why the gates are vendored
+
+This package is private; the integrations it checks are public and build on
+GitHub. A hook that cloned this repository, or a CI step that installed it
+from a private index, would need a token — and **a public repository hands no
+secrets to a pull request from a fork**, so every outside contribution would
+go red through no fault of its own. It would also make a green build depend on
+a server that is not reachable from GitHub at all.
+
+So `ha-standards sync` writes the checks *into* the project, under
+`scripts/_ha_standards/`, together with the release they came from and a
+SHA-256 of each file. CI then needs nothing but the checkout it already has,
+and a fork's pull request runs exactly the same gates. Editing a vendored
+check to make a commit pass fails `run.py verify`, which runs before the gates
+do.
+
 ## Use it in an existing integration
 
 ```bash
-pip install ha-integration-standards
+pip install -e ~/Code/ha-integration-standards   # or from your own index
 ha-standards adopt
 ```
 
-`adopt` adds the hooks to `.pre-commit-config.yaml`, leaves a commented
-`[tool.ha_standards]` block in `pyproject.toml`, makes `CLAUDE.md` import the
-standards document, and writes the managed files. It touches nothing else —
-your integration's code, tests, README and `quality_scale.yaml` stay yours.
+`adopt` writes the gates, adds the hooks to `.pre-commit-config.yaml`, leaves
+a commented `[tool.ha_standards]` block in `pyproject.toml`, makes `CLAUDE.md`
+import the standards document, and writes the managed CI workflow. It touches
+nothing else — your integration's code, tests, README and `quality_scale.yaml`
+stay yours.
 
 ## Take a newer version
 
 ```bash
-pre-commit autoupdate --repo https://github.com/skjall/ha-integration-standards
+git -C ~/Code/ha-integration-standards pull
 ha-standards sync
+git diff      # the rules that changed, before they are in force
+git commit -am "chore: take ha-integration-standards 0.2.0"
 ```
 
-The `rev` in `.pre-commit-config.yaml` is the version of the rules this
-project runs. Renovate keeps it moving on its own when `"pre-commit": {
-"enabled": true }` is set. `sync` rewrites the managed files; `ha-standards
-check` (the `ha-sync` hook) fails when one of them has drifted.
+Updating is deliberate: you see the diff of the rules before they gate your
+next commit. `ha-standards check` reports a managed file that has drifted.
 
 ## Start a new integration
 
@@ -46,24 +63,26 @@ ha-standards new ~/Code/home-assistant-acme-kettle \
 A scaffold that already holds the tier: typed config entry, coordinator, base
 entity, a platform, diagnostics, translations, tests, CI, release automation.
 
-## The hooks
+## The gates
 
-| Hook | What it holds |
-|---|---|
-| `ha-quality-scale` | the code still does what `quality_scale.yaml` claims |
-| `ha-coverage` | the per-module coverage floors the claimed tier requires |
-| `ha-commit-message` | Conventional Commits, written in English |
-| `ha-types` | `mypy --strict`, against the targeted Home Assistant |
-| `ha-tests` | the suite, in Docker, on the interpreter the release needs |
-| `ha-sync` | the managed files are the ones this release ships |
+All of them run through one entry point in the project, so the same command
+works in a hook, in CI and by hand:
 
-In CI, the same gates come from a reusable workflow:
-
-```yaml
-jobs:
-  standards:
-    uses: skjall/ha-integration-standards/.github/workflows/ha-integration.yml@v0
+```bash
+python3 scripts/_ha_standards/run.py --help
 ```
+
+| Gate | What it holds |
+|---|---|
+| `verify` | the vendored copy is the one that was synced |
+| `quality-scale` | the code still does what `quality_scale.yaml` claims |
+| `coverage` | the per-module coverage floors the claimed tier requires |
+| `commit-message` | Conventional Commits, written in English |
+| `types` | `mypy --strict`, against the targeted Home Assistant |
+| `tests` | the suite, in Docker, on the interpreter the release needs |
+
+`ha-standards sync` also writes `.github/workflows/quality.yml`, which runs
+the same gates in CI using nothing but the checkout.
 
 ## Configuration
 

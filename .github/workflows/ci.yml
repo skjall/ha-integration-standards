@@ -48,6 +48,10 @@ jobs:
         run: |
           ha-standards new /tmp/acme --domain acme_kettle --owner example \
             --name "Acme Kettle"
-      - name: It has to hold what it claims
+      - name: It has to hold what it claims - through its own vendored copy,
+        # which is how a real project runs the gates: nothing installed.
         working-directory: /tmp/acme
-        run: ha-quality-scale
+        run: |
+          pip install pyyaml
+          python3 scripts/_ha_standards/run.py verify
+          python3 scripts/_ha_standards/run.py quality-scale

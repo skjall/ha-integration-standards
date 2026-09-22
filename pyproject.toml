@@ -30,7 +30,6 @@ ha-coverage = "ha_integration_standards.checks.coverage:main"
 ha-commit-message = "ha_integration_standards.checks.commit_message:main"
 ha-tests = "ha_integration_standards.runner:tests"
 ha-types = "ha_integration_standards.runner:types"
-ha-sync = "ha_integration_standards.cli:main_check"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ha_integration_standards"]

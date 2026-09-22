@@ -18,13 +18,13 @@ changelog is published.
 
 Only the chat reply to the user is German.
 
-The `ha-commit-message` hook rejects a message that misses its type or reads
-as German.
+The `commit-message` gate rejects a message that misses its type or reads as
+German.
 
 ## The quality tier is held, not claimed
 
 `custom_components/{{domain}}/quality_scale.yaml` is a promise. The
-`ha-quality-scale` hook checks the part of it a machine can check and fails the
+`quality-scale` gate checks the part of it a machine can check and fails the
 commit when the code has drifted below the claim. Rules that need a human are
 listed in the package's `NOT_CHECKABLE`, so the gap between *checked* and
 *claimed* stays visible; a rule that only this project cannot prove goes under
@@ -67,8 +67,8 @@ a claim the runtime never repeats. The tier actually met is recorded in
 
 ## Tests run in Docker, against the targeted Home Assistant
 
-`ha-tests` builds `Dockerfile.test` and runs pytest inside it. This is not
-ceremony:
+`python3 scripts/_ha_standards/run.py tests` builds `Dockerfile.test` and runs
+pytest inside it. This is not ceremony:
 
 - Home Assistant needs **Python 3.14.2 from 2026.3 onwards**. Most systems do
   not have it, and testing on an older interpreter means testing an API that
@@ -84,8 +84,8 @@ will keep proposing bumps that must never be taken on their own.
 `scripts/ha_test_requirements.py` reads them out of the installed release
 instead, using the dependencies this integration's own manifest declares.
 
-Coverage: `pytest` fails below the overall floor, and `ha-coverage` adds the
-per-module floors a single number hides — a config flow at 88% still passes a
+Coverage: `pytest` fails below the overall floor, and the `coverage` gate adds
+the per-module floors a single number hides — a config flow at 88% still passes a
 95% average, and the Bronze rule asks for all of it. The floors live in
 `[tool.ha_standards.coverage]`.
 
@@ -104,7 +104,7 @@ Two traps:
   integration pins a library that lives in this repository, release-please
   raises the pin in `manifest.json` and the version in `lib/` in one commit.
   Renovate must be told to leave that package alone, or its PR races the
-  release commit. `ha-quality-scale` fails when the two drift apart.
+  release commit. The `quality-scale` gate fails when the two drift apart.
 
 PyPI publishing uses **Trusted Publishing** — no token is stored anywhere; the
 trust is configured once on pypi.org for that workflow.
@@ -155,14 +155,25 @@ gate and the coverage gate. Install it once:
 python3 -m venv .venv && .venv/bin/pip install pre-commit && .venv/bin/pre-commit install
 ```
 
-Never `--no-verify`. The gates live in **ha-integration-standards**, not in
-this repository: if one is wrong, fix it there and raise the `rev` in
-`.pre-commit-config.yaml`. That is also how this project takes newer rules —
-nothing in the integration itself has to change for it.
+Never `--no-verify`.
 
-`ha-standards sync` rewrites the files that package manages (this document,
-`Dockerfile.test`, `scripts/ha_test_requirements.py`, the CI caller). The
-`ha-sync` hook fails when one of them has drifted from the installed version.
+The gates under `scripts/_ha_standards/` are **written by
+ha-integration-standards, not maintained here**. They are vendored rather than
+fetched because this repository is public and its CI runs on GitHub: a hook
+that cloned a private tool would need a secret, and a pull request from a fork
+never gets one.
+
+So do not edit them. `run.py verify` hashes each file and runs before the
+other gates, precisely so that "make the check pass" cannot mean "change the
+check". If a rule is wrong, fix it in the standards repository and run:
+
+```bash
+ha-standards sync     # rewrites the gates and the files it manages
+git diff              # the rules that changed, before they are in force
+```
+
+The same command updates this document, `Dockerfile.test`,
+`scripts/ha_test_requirements.py` and `.github/workflows/quality.yml`.
 
 ## Deploying to a real installation
 

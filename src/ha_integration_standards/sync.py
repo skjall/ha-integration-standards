@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
-from . import __version__
+from . import __version__, vendor
 from .discovery import Integration
 
 # source inside managed/  ->  destination in the project
@@ -31,7 +31,54 @@ MANAGED: dict[str, str] = {
 # What CLAUDE.md needs so the standards reach the assistant working here.
 CLAUDE_IMPORT = "@docs/ha-integration-standards.md"
 
-PRECOMMIT_REPO = "https://github.com/{owner}/ha-integration-standards"
+# The hooks, pointing at the vendored copy. They are local on purpose: this
+# package is private and the integrations are public, so a hook that cloned it
+# would need a token that a fork's pull request never gets.
+PRECOMMIT_BLOCK = """  - repo: local
+    hooks:
+      # Written by ha-integration-standards {version}; `ha-standards sync`
+      # updates them. Run `python3 {vendor}/run.py --help` to see the gates.
+      - id: ha-verify
+        name: Gates - the vendored copy is the one that was synced
+        entry: python3 {vendor}/run.py verify
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ha-quality-scale
+        name: Quality scale - the code holds what quality_scale.yaml claims
+        entry: python3 {vendor}/run.py quality-scale
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ha-types
+        name: Types - mypy --strict against the targeted Home Assistant
+        entry: python3 {vendor}/run.py types
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ha-tests
+        name: Tests - against the targeted Home Assistant, in Docker
+        entry: python3 {vendor}/run.py tests -q
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ha-coverage
+        name: Coverage - the floors the claimed tier requires
+        entry: python3 {vendor}/run.py coverage
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ha-commit-message
+        name: Commit message - Conventional Commits, in English
+        entry: python3 {vendor}/run.py commit-message
+        language: system
+        stages: [commit-msg]
+"""
 
 
 @dataclass(frozen=True)
@@ -94,10 +141,13 @@ def _template(name: str) -> str:
 def rendered(it: Integration) -> dict[str, str]:
     """Every managed file, as it should look in this project."""
     values = placeholders_for(it)
-    return {
+    files = {
         destination: values.render(_template(source))
         for source, destination in MANAGED.items()
     }
+    # The gates themselves travel with the project rather than being fetched.
+    files.update(vendor.contents())
+    return files
 
 
 def write(it: Integration) -> list[str]:
@@ -130,26 +180,17 @@ def drift(it: Integration) -> dict[str, str]:
 # --- wiring a project up ----------------------------------------------------
 
 
-def ensure_precommit(it: Integration, version: str = __version__) -> str | None:
-    """Point .pre-commit-config.yaml at this package, or update the rev.
+MARKER = f"{vendor.VENDOR}/run.py"
 
-    The rest of the file is left exactly as it is: other hooks, other repos,
-    the project's own ordering.
+
+def ensure_precommit(it: Integration, version: str = __version__) -> str | None:
+    """Put the gates into .pre-commit-config.yaml, or refresh them.
+
+    Everything else in the file is left exactly as it is: other hooks, other
+    repos, the project's own ordering.
     """
     path = it.root / ".pre-commit-config.yaml"
-    owner = placeholders_for(it).owner
-    repo_url = PRECOMMIT_REPO.format(owner=owner)
-    block = (
-        f"  - repo: {repo_url}\n"
-        f"    rev: v{version}\n"
-        "    hooks:\n"
-        "      - id: ha-quality-scale\n"
-        "      - id: ha-coverage\n"
-        "      - id: ha-commit-message\n"
-        "      - id: ha-types\n"
-        "      - id: ha-tests\n"
-        "      - id: ha-sync\n"
-    )
+    block = PRECOMMIT_BLOCK.format(version=version, vendor=vendor.VENDOR)
 
     if not path.exists():
         path.write_text(
@@ -160,16 +201,24 @@ def ensure_precommit(it: Integration, version: str = __version__) -> str | None:
         return "created"
 
     text = path.read_text(encoding="utf-8")
-    if repo_url in text:
-        updated = re.sub(
-            rf"(- repo: {re.escape(repo_url)}\n\s+rev: )\S+",
-            rf"\g<1>v{version}",
-            text,
-        )
+    if MARKER in text:
+        # Replace the whole block: which gates exist is this package's call,
+        # not the project's, and a stale list would silently drop one.
+        start = text.index("  - repo: local\n")
+        while (
+            start > 0
+            and MARKER not in text[start : text.find("  - repo: ", start + 10)]
+        ):
+            start = text.find("  - repo: local\n", start + 1)
+            if start == -1:
+                return "could not find the block to replace"
+        end = text.find("  - repo: ", start + 10)
+        end = len(text) if end == -1 else end
+        updated = text[:start] + block + text[end:]
         if updated == text:
             return None
         path.write_text(updated, encoding="utf-8")
-        return f"rev raised to v{version}"
+        return f"gates refreshed for {version}"
 
     if "repos:" not in text:
         return "no 'repos:' key - add the hooks by hand"

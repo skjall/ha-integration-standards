@@ -10,20 +10,21 @@ python3 -m venv .venv && .venv/bin/pip install pre-commit
 ```
 
 From then on every commit runs ruff, `mypy --strict`, the full test suite and
-the gates from
-[ha-integration-standards](https://github.com/{{owner}}/ha-integration-standards):
-the quality tier `custom_components/{{domain}}/quality_scale.yaml` claims has
-to survive its check, and the coverage floors that tier requires have to hold.
+the gates under `scripts/_ha_standards/`: the quality tier that
+`custom_components/{{domain}}/quality_scale.yaml` claims has to survive its
+check, and the coverage floors that tier requires have to hold.
 
-The rules live in that package, not here. If one is wrong, fix it there and
-raise the `rev` in `.pre-commit-config.yaml`.
+Those gates are written by `ha-integration-standards` and are not maintained
+here — `run.py verify` hashes them and runs first, so "make the check pass"
+cannot mean "change the check". If a rule is wrong, fix it there and run
+`ha-standards sync`.
 
 ## Tests
 
 ```bash
-ha-tests             # everything
-ha-tests -k flow     # one slice
-ha-types             # types only
+python3 scripts/_ha_standards/run.py tests           # everything
+python3 scripts/_ha_standards/run.py tests -k flow   # one slice
+python3 scripts/_ha_standards/run.py types           # types only
 ```
 
 Both run in Docker, against the exact Home Assistant version the integration
