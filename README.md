@@ -84,6 +84,19 @@ python3 scripts/_ha_standards/run.py --help
 `ha-standards sync` also writes `.github/workflows/quality.yml`, which runs
 the same gates in CI using nothing but the checkout.
 
+A green check only stops a merge if the branch protection asks for it by
+name, and a required check *is* a name — drop the workflow that reported it
+and the protection waits for ever on a job that no longer exists. So the
+names are not kept in two places:
+
+```bash
+ha-standards protect           # --dry-run prints them, changes nothing
+```
+
+It reads every job of every workflow that runs on a pull request and requires
+exactly those on the default branch. Run it after `adopt`, and again whenever
+a job is added or renamed.
+
 ## Configuration
 
 Everything has a default that works. A project writes a key down only when it

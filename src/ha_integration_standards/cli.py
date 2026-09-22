@@ -1,4 +1,4 @@
-"""ha-standards: adopt, sync, check, and start a new integration."""
+"""ha-standards: adopt, sync, check, protect, and start a new integration."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import sys
 from importlib import resources
 from pathlib import Path
 
-from . import __version__, sync
+from . import __version__, protect, sync
 from .discovery import Integration, NoIntegrationError, find_integration
 
 
@@ -45,6 +45,32 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"  FAIL  {path}: {reason}")
     print("\nRun 'ha-standards sync' to bring them back.")
     return 1
+
+
+def cmd_protect(args: argparse.Namespace) -> int:
+    """Require exactly the checks a pull request here reports."""
+    it = _integration(args.path)
+    found = protect.contexts(it.root)
+    if args.dry_run:
+        print(f"Checks a pull request reports in {it.root.name}:\n")
+        for name in found:
+            print(f"  {name}")
+        return 0 if found else 1
+    try:
+        done = protect.apply(it.root, args.repo)
+    except protect.NoGhError as err:
+        print(f"  {err}", file=sys.stderr)
+        return 1
+    print(f"{done.repo}: {done.branch} now requires\n")
+    for name in done.contexts:
+        print(f"  {name}{'  (new)' if name in done.added else ''}")
+    if done.dropped:
+        print("\nNo longer required, because nothing reports them:\n")
+        for name in done.dropped:
+            print(f"  {name}")
+    if done.before is None:
+        print("\nThe branch was unprotected until now.")
+    return 0
 
 
 def cmd_adopt(args: argparse.Namespace) -> int:
@@ -140,6 +166,16 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("check", help="fail when a managed file has drifted")
     check.add_argument("path", nargs="?")
     check.set_defaults(func=cmd_check)
+
+    guard = sub.add_parser(
+        "protect", help="require exactly the checks this repository reports"
+    )
+    guard.add_argument("path", nargs="?")
+    guard.add_argument("--repo", help="owner/name (default: the checkout's remote)")
+    guard.add_argument(
+        "--dry-run", action="store_true", help="print the checks, change nothing"
+    )
+    guard.set_defaults(func=cmd_protect)
 
     new = sub.add_parser("new", help="start a new integration from the scaffold")
     new.add_argument("path", help="directory to create")
