@@ -32,6 +32,7 @@ MODULES = (
     "discovery.py",
     "runner.py",
     "checks/__init__.py",
+    "checks/brand_image.py",
     "checks/commit_message.py",
     "checks/coverage.py",
     "checks/quality_scale.py",
