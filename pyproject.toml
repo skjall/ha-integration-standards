@@ -54,3 +54,8 @@ ignore = ["D203", "D213", "TRY003"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "pep257"
+
+[tool.pytest.ini_options]
+# The scaffold carries its own tests, which are not Python until its
+# placeholders are filled in. The CI job "scaffold" runs them in a real project.
+testpaths = ["tests"]

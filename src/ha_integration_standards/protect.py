@@ -13,9 +13,20 @@ in the repository - every job of every workflow that runs on a pull request -
 and written to the default branch's protection. Add a job, run this again,
 and the protection follows.
 
-Which checks must pass is what this package decides. Who may merge, whether a
-review is needed and whether administrators are exempt are not its business,
-so those settings are left exactly as the repository has them.
+The checks alone are not the whole protection, and a new repository has none
+of it until someone remembers. So the same run also holds the rest of what
+every integration of this family needs:
+
+- a ruleset on the default branch: changes arrive through a pull request, the
+  branch cannot be force-pushed or deleted, and the same checks must pass.
+  No approval is required, and administrators may bypass it - one maintainer
+  has nobody to wait for;
+- workflow permissions that let release-please open its release pull request;
+- where lib/ builds a package, the 'pypi' environment its publishing job runs
+  in, limited to the default branch and to release tags.
+
+Every step reads what is there and writes what is wanted, so running it again
+changes nothing that is already right.
 """
 
 from __future__ import annotations
@@ -43,6 +54,8 @@ class Protection:
     branch: str
     contexts: tuple[str, ...]
     before: tuple[str, ...] | None
+    ruleset: str = "created"
+    pypi: bool = False
 
     @property
     def dropped(self) -> tuple[str, ...]:
@@ -187,4 +200,133 @@ def apply(root: Path, repo: str | None = None) -> Protection:
         "--silent",
         stdin=json.dumps(body),
     )
-    return Protection(repo=name, branch=branch, contexts=wanted, before=before)
+    ruleset = _ruleset(name, branch, wanted)
+    _gh(
+        "api",
+        "--method",
+        "PUT",
+        f"repos/{name}/actions/permissions/workflow",
+        "-f",
+        "default_workflow_permissions=write",
+        # release-please opens its release pull request with the workflow
+        # token; without this GitHub refuses, and no release ever happens.
+        "-F",
+        "can_approve_pull_request_reviews=true",
+        "--silent",
+    )
+    pypi = _pypi_environment(root, name, branch)
+    return Protection(
+        repo=name,
+        branch=branch,
+        contexts=wanted,
+        before=before,
+        ruleset=ruleset,
+        pypi=pypi,
+    )
+
+
+# GitHub's id for the repository admin role, the one that may bypass.
+_ADMIN_ROLE = 5
+
+
+def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
+    """Create or update the default branch's ruleset; say which it was."""
+    body = {
+        "name": branch,
+        "target": "branch",
+        "enforcement": "active",
+        "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
+        "bypass_actors": [
+            {
+                "actor_id": _ADMIN_ROLE,
+                "actor_type": "RepositoryRole",
+                "bypass_mode": "always",
+            }
+        ],
+        "rules": [
+            {"type": "deletion"},
+            {"type": "non_fast_forward"},
+            {
+                "type": "pull_request",
+                "parameters": {
+                    "required_approving_review_count": 0,
+                    "dismiss_stale_reviews_on_push": False,
+                    "require_code_owner_review": False,
+                    "require_last_push_approval": False,
+                    "required_review_thread_resolution": False,
+                    "allowed_merge_methods": ["squash", "merge"],
+                },
+            },
+            {
+                "type": "required_status_checks",
+                "parameters": {
+                    "strict_required_status_checks_policy": True,
+                    "required_status_checks": [{"context": c} for c in wanted],
+                },
+            },
+        ],
+    }
+    existing = json.loads(_gh("api", f"repos/{repo}/rulesets") or "[]")
+    match = next((r["id"] for r in existing if r.get("name") == branch), None)
+    if match is None:
+        path, method, outcome = f"repos/{repo}/rulesets", "POST", "created"
+    else:
+        path, method, outcome = f"repos/{repo}/rulesets/{match}", "PUT", "updated"
+    _gh(
+        "api",
+        "--method",
+        method,
+        path,
+        "--input",
+        "-",
+        "--silent",
+        stdin=json.dumps(body),
+    )
+    return outcome
+
+
+def _pypi_environment(root: Path, repo: str, branch: str) -> bool:
+    """Give a package from lib/ the environment its publishing job runs in.
+
+    Trusted Publishing on pypi.org names this environment, and limiting it to
+    the default branch and release tags keeps a pull request from publishing.
+    Returns whether there was a package to do it for.
+    """
+    if not any((root / "lib").glob("*/pyproject.toml")):
+        return False
+    _gh(
+        "api",
+        "--method",
+        "PUT",
+        f"repos/{repo}/environments/pypi",
+        "--input",
+        "-",
+        "--silent",
+        stdin=json.dumps(
+            {
+                "deployment_branch_policy": {
+                    "protected_branches": False,
+                    "custom_branch_policies": True,
+                }
+            }
+        ),
+    )
+    raw = _gh("api", f"repos/{repo}/environments/pypi/deployment-branch-policies")
+    have = {
+        (p.get("name"), p.get("type", "branch"))
+        for p in json.loads(raw or "{}").get("branch_policies", [])
+    }
+    for name, kind in ((branch, "branch"), ("v*", "tag")):
+        if (name, kind) not in have:
+            _gh(
+                "api",
+                "--method",
+                "POST",
+                f"repos/{repo}/environments/pypi/deployment-branch-policies",
+                "-f",
+                f"name={name}",
+                "-f",
+                f"type={kind}",
+                "--silent",
+            )
+    return True

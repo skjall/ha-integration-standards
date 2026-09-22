@@ -70,6 +70,11 @@ def cmd_protect(args: argparse.Namespace) -> int:
             print(f"  {name}")
     if done.before is None:
         print("\nThe branch was unprotected until now.")
+    print(f"\nRuleset '{done.branch}' {done.ruleset}: pull requests only,")
+    print("  no force-push, no deletion, the same checks.")
+    print("Workflows may open pull requests (release-please needs that).")
+    if done.pypi:
+        print(f"Environment 'pypi' limited to {done.branch} and tags v*.")
     return 0
 
 
@@ -140,6 +145,8 @@ def cmd_new(args: argparse.Namespace) -> int:
     print("  git init && git add -A")
     print("  python3 -m venv .venv && .venv/bin/pip install pre-commit")
     print("  .venv/bin/pre-commit install")
+    print("Once the repository exists on GitHub and main is pushed:")
+    print("  ha-standards protect      # not optional: nothing else protects main")
     return 0
 
 

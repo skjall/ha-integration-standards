@@ -103,26 +103,55 @@ def test_apply_refuses_when_nothing_reports(tmp_path: Path) -> None:
         protect.apply(tmp_path)
 
 
+class FakeGitHub:
+    """Answer the gh calls protect makes, and remember every write."""
+
+    def __init__(
+        self,
+        protected: list[str] | None = None,
+        rulesets: list[dict[str, object]] | None = None,
+        policies: list[dict[str, str]] | None = None,
+    ) -> None:
+        self.protected = protected
+        self.rulesets = rulesets or []
+        self.policies = policies or []
+        self.writes: list[tuple[str, str, object]] = []
+
+    def __call__(
+        self, *args: str, stdin: str | None = None, cwd: Path | None = None
+    ) -> str:
+        if args[0] == "repo":
+            return "acme/kettle\n" if "nameWithOwner" in args else "main\n"
+        if args[1] == "--method":
+            method, path = args[2], args[3]
+            body: object = json.loads(stdin) if stdin else list(args[4:])
+            self.writes.append((method, path, body))
+            return ""
+        path = args[1]
+        if path.endswith("/protection"):
+            if self.protected is None:
+                raise protect.NoGhError("Branch not protected (HTTP 404)")
+            return json.dumps(self.protected)
+        if path.endswith("/rulesets"):
+            return json.dumps(self.rulesets)
+        if path.endswith("/deployment-branch-policies"):
+            return json.dumps({"branch_policies": self.policies})
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    def written(self, path: str) -> list[tuple[str, object]]:
+        return [(m, b) for m, p, b in self.writes if p == path]
+
+
 def test_apply_sends_exactly_what_the_workflows_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _workflows(tmp_path, quality=QUALITY, extra=NAMED)
-    sent: dict[str, object] = {}
-
-    def fake_gh(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
-        if args[0] == "repo":
-            return "acme/kettle\n" if "nameWithOwner" in args else "main\n"
-        if args[1] == "--method":
-            sent["path"] = args[3]
-            sent["body"] = json.loads(stdin or "{}")
-            return ""
-        return '["lint", "gone-with-the-old-workflow"]'
-
-    monkeypatch.setattr(protect, "_gh", fake_gh)
+    github = FakeGitHub(protected=["lint", "gone-with-the-old-workflow"])
+    monkeypatch.setattr(protect, "_gh", github)
     done = protect.apply(tmp_path)
 
-    assert sent["path"] == "repos/acme/kettle/branches/main/protection"
-    body = sent["body"]
+    [(method, body)] = github.written("repos/acme/kettle/branches/main/protection")
+    assert method == "PUT"
     assert isinstance(body, dict)
     checks = body["required_status_checks"]
     assert isinstance(checks, dict)
@@ -131,30 +160,135 @@ def test_apply_sends_exactly_what_the_workflows_report(
     # A branch must catch up with the base, or a green check says nothing
     # about what will be on the default branch.
     assert checks["strict"] is True
-    # Who may merge is not this package's decision.
     assert body["required_pull_request_reviews"] is None
     assert done.dropped == ("gone-with-the-old-workflow",)
     assert done.added == ("protocol-package", "test")
+
+
+def test_apply_creates_the_ruleset_a_new_repository_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pull requests only, no force-push, no deletion, the same checks."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub()
+    monkeypatch.setattr(protect, "_gh", github)
+    done = protect.apply(tmp_path)
+
+    [(method, body)] = github.written("repos/acme/kettle/rulesets")
+    assert method == "POST"
+    assert done.ruleset == "created"
+    assert isinstance(body, dict)
+    assert body["name"] == "main"
+    assert body["conditions"] == {
+        "ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}
+    }
+    rules = {rule["type"]: rule for rule in body["rules"]}
+    assert set(rules) == {
+        "deletion",
+        "non_fast_forward",
+        "pull_request",
+        "required_status_checks",
+    }
+    # One maintainer has nobody to wait for.
+    assert rules["pull_request"]["parameters"]["required_approving_review_count"] == 0
+    assert rules["required_status_checks"]["parameters"]["required_status_checks"] == [
+        {"context": "lint"},
+        {"context": "test"},
+    ]
+    assert body["bypass_actors"][0]["actor_type"] == "RepositoryRole"
+
+
+def test_apply_updates_a_ruleset_that_is_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        protected=["lint"], rulesets=[{"id": 7, "name": "main"}, {"id": 9, "name": "x"}]
+    )
+    monkeypatch.setattr(protect, "_gh", github)
+    done = protect.apply(tmp_path)
+
+    [(method, _)] = github.written("repos/acme/kettle/rulesets/7")
+    assert method == "PUT"
+    assert done.ruleset == "updated"
+    assert github.written("repos/acme/kettle/rulesets") == []
+
+
+def test_apply_lets_release_please_open_pull_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub()
+    monkeypatch.setattr(protect, "_gh", github)
+    protect.apply(tmp_path)
+
+    [(method, args)] = github.written("repos/acme/kettle/actions/permissions/workflow")
+    assert method == "PUT"
+    assert isinstance(args, list)
+    assert "default_workflow_permissions=write" in args
+    assert "can_approve_pull_request_reviews=true" in args
+
+
+def test_no_package_no_pypi_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub()
+    monkeypatch.setattr(protect, "_gh", github)
+    done = protect.apply(tmp_path)
+
+    assert not done.pypi
+    assert not any("environments" in path for _, path, _ in github.writes)
+
+
+def test_a_package_gets_its_pypi_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Limited to the default branch and release tags; nothing twice."""
+    _workflows(tmp_path, quality=QUALITY)
+    (tmp_path / "lib" / "kettle_protocol").mkdir(parents=True)
+    (tmp_path / "lib" / "kettle_protocol" / "pyproject.toml").write_text("")
+    github = FakeGitHub(policies=[{"name": "main", "type": "branch"}])
+    monkeypatch.setattr(protect, "_gh", github)
+    done = protect.apply(tmp_path)
+
+    assert done.pypi
+    [(method, body)] = github.written("repos/acme/kettle/environments/pypi")
+    assert method == "PUT"
+    assert body == {
+        "deployment_branch_policy": {
+            "protected_branches": False,
+            "custom_branch_policies": True,
+        }
+    }
+    added = github.written(
+        "repos/acme/kettle/environments/pypi/deployment-branch-policies"
+    )
+    assert added == [("POST", ["-f", "name=v*", "-f", "type=tag", "--silent"])]
 
 
 def test_an_unprotected_branch_is_an_outcome_not_a_fault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _workflows(tmp_path, quality=QUALITY)
-
-    def fake_gh(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
-        if args[0] == "repo":
-            return "acme/kettle\n" if "nameWithOwner" in args else "main\n"
-        if args[1] == "--method":
-            return ""
-        raise protect.NoGhError("Branch not protected (HTTP 404)")
-
-    monkeypatch.setattr(protect, "_gh", fake_gh)
+    monkeypatch.setattr(protect, "_gh", FakeGitHub())
     done = protect.apply(tmp_path)
 
     assert done.before is None
     assert done.dropped == ()
     assert done.contexts == ("lint", "test")
+
+
+def test_protect_reports_what_it_did(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workflows(project, quality=QUALITY)
+    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+
+    assert main(["protect", str(project)]) == 0
+    out = capsys.readouterr().out
+    assert "unprotected until now" in out
+    assert "Ruleset 'main' created" in out
 
 
 def test_dry_run_prints_and_changes_nothing(

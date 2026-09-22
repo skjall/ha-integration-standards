@@ -63,6 +63,14 @@ ha-standards new ~/Code/home-assistant-acme-kettle \
 A scaffold that already holds the tier: typed config entry, coordinator, base
 entity, a platform, diagnostics, translations, tests, CI, release automation.
 
+Once the repository exists on GitHub and `main` is pushed, protect it - a new
+repository has no protection at all until then:
+
+```bash
+gh repo create yourname/home-assistant-acme-kettle --public --source . --push
+ha-standards protect
+```
+
 ## The gates
 
 All of them run through one entry point in the project, so the same command
@@ -96,6 +104,13 @@ ha-standards protect           # --dry-run prints them, changes nothing
 It reads every job of every workflow that runs on a pull request and requires
 exactly those on the default branch. Run it after `adopt`, and again whenever
 a job is added or renamed.
+
+The same run holds the rest of the protection a new repository lacks until
+someone remembers: a ruleset on the default branch (pull requests only, no
+force-push, no deletion, the same checks), workflow permissions that let
+release-please open its pull request, and - where `lib/` builds a package -
+the `pypi` environment, limited to the default branch and `v*` tags. For a new
+integration it is the step after the first push of `main`.
 
 ## Configuration
 

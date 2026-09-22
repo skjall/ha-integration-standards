@@ -189,8 +189,25 @@ ha-standards protect            # --dry-run prints them, changes nothing
 It reads every job of every workflow that runs on a pull request and requires
 exactly those on the default branch, with `strict` set so a branch catches up
 with the base before it merges. Run it after adopting this package, and again
-whenever a job is added or renamed. It touches nothing else — who may merge
-and whether a review is needed stay as the repository has them.
+whenever a job is added or renamed.
+
+**A new repository is unprotected until this runs.** Nothing else sets the
+protection up, and nothing complains while it is missing: `main` accepts a
+direct push, a force-push, a deletion. So `ha-standards protect` belongs to
+creating the repository, straight after the first push of `main`, as much as
+`git init` does. The same run also sets up what every integration here needs
+around the checks:
+
+- a **ruleset** on the default branch: pull requests only, no force-push, no
+  deletion, the same checks. No approval is required and administrators may
+  bypass it — one maintainer has nobody to wait for;
+- **workflow permissions** that let release-please open its release pull
+  request, which GitHub otherwise refuses;
+- where `lib/` builds a package, the **`pypi` environment** its publishing job
+  runs in, limited to the default branch and to `v*` tags.
+
+Each step reads what is there and writes what is wanted, so running it again
+is always safe.
 
 Matrix jobs are left out. They report one context per combination, with the
 values in brackets (`test (3.13)`), and guessing that spelling wrongly is the
