@@ -60,15 +60,24 @@ def _ensure_image(it: Integration) -> str:
     return image
 
 
-def _run(it: Integration, image: str, command: list[str], *, network: bool) -> int:
+def _run(
+    it: Integration,
+    image: str,
+    command: list[str],
+    *,
+    network: bool,
+    as_user: bool = True,
+) -> int:
     artefacts = it.root / ".artefakte"
     artefacts.mkdir(exist_ok=True)
     docker = [
         "docker",
         "run",
         "--rm",
-        "--user",
-        f"{os.getuid()}:{os.getgid()}",
+        # Run as the caller so nothing a test writes is owned by root. The
+        # type check is the exception: it installs into the image's own
+        # site-packages and the container is thrown away either way.
+        *(["--user", f"{os.getuid()}:{os.getgid()}"] if as_user else []),
         "-e",
         "HOME=/tmp",
         "-e",
@@ -123,17 +132,19 @@ def types(argv: list[str] | None = None) -> int:
     image = _ensure_image(it)
     target = it.path.relative_to(it.root).as_posix()
     # mypy is installed here rather than baked into the image so that a bumped
-    # mypy takes effect without rebuilding.
+    # mypy takes effect without rebuilding. A failed install has to fail the
+    # run: swallowing it turns a broken environment into "mypy: not found".
     return _run(
         it,
         image,
         [
             "sh",
-            "-c",
-            "pip install -q mypy >/dev/null 2>&1; "
+            "-ec",
+            "pip install -q --root-user-action=ignore mypy; "
             f"mypy --strict --ignore-missing-imports --cache-dir=/tmp/mypy {target}",
         ],
         network=True,
+        as_user=False,
     )
 
 
