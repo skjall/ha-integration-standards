@@ -32,8 +32,19 @@ def _components_directory() -> Path | None:
 
 
 def _manifest() -> dict:
-    """Return the integration's manifest, or an empty dict."""
-    for manifest in sorted(Path("custom_components").glob("*/manifest.json")):
+    """Return the integration's manifest, or an empty dict.
+
+    Two places, because this also runs during the Docker build, where the
+    integration is not in the image yet - only its manifest is, copied next to
+    this script so that a code change does not invalidate the build cache.
+    """
+    here = Path(__file__).resolve().parent
+    candidates = [
+        *sorted(Path("custom_components").glob("*/manifest.json")),
+        *sorted(here.glob("manifest.json")),
+        *sorted(here.glob("*/manifest.json")),
+    ]
+    for manifest in candidates:
         return json.loads(manifest.read_text(encoding="utf-8"))
     return {}
 
