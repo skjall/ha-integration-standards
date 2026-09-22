@@ -81,6 +81,20 @@ PRECOMMIT_BLOCK = """  - repo: local
 """
 
 
+# What the image build needs when the project builds its own package. The
+# requirements reader installs such a package from `lib/` rather than from
+# PyPI, so `lib/` has to be in the build context - and a project without one
+# must not end up with a COPY of a directory that is not there, which fails the
+# build for that project alone. Hence a whole block rather than a path: it is
+# either present or it is nothing at all.
+LOCAL_PACKAGES = """
+
+# The package this repository builds itself, so it is installed from here
+# rather than from PyPI: the published version is the one before the change
+# under test, and during a release it does not exist yet at all.
+COPY lib/ /tmp/setup/lib/"""
+
+
 @dataclass(frozen=True)
 class Placeholders:
     """The few values a managed file may mention about its project."""
@@ -89,6 +103,7 @@ class Placeholders:
     name: str
     owner: str
     repo: str
+    local_packages: str
 
     def render(self, text: str) -> str:
         """Fill the placeholders in one managed file."""
@@ -97,6 +112,7 @@ class Placeholders:
             "name": self.name,
             "owner": self.owner,
             "repo": self.repo,
+            "local_packages": self.local_packages,
         }.items():
             text = text.replace("{{" + key + "}}", value)
         return text
@@ -113,7 +129,13 @@ def placeholders_for(it: Integration) -> Placeholders:
         name=it.manifest.get("name", it.domain),
         owner=owner or "OWNER",
         repo=repo or it.root.name,
+        local_packages=LOCAL_PACKAGES if _builds_its_own_package(it.root) else "",
     )
+
+
+def _builds_its_own_package(root: Path) -> bool:
+    """Whether this project publishes a package of its own from `lib/`."""
+    return any((root / "lib").glob("*/pyproject.toml"))
 
 
 def _origin(root: Path) -> tuple[str, str]:
