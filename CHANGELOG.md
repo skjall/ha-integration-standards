@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/skjall/ha-integration-standards/compare/v0.2.0...v0.3.0) (2026-09-22)
+
+
+### Features
+
+* **check:** audit the repository settings, not only the managed files ([dc11b99](https://github.com/skjall/ha-integration-standards/commit/dc11b99e1592f93e9783211b306250eb78fe71ce))
+* **check:** audit the repository settings, not only the managed files ([500106a](https://github.com/skjall/ha-integration-standards/commit/500106a5944e16130e1ecb9cd7a28cb298e8ae0f))
+
 ## [0.2.0](https://github.com/skjall/ha-integration-standards/compare/v0.1.2...v0.2.0) (2026-09-22)
 
 
