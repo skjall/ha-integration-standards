@@ -232,6 +232,59 @@ def _drop_branch_protection(repo: str, branch: str) -> bool:
     return True
 
 
+def audit(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
+    """Return what is wrong with the repository's settings, if anything.
+
+    `check` runs on every commit; `protect` runs when somebody remembers. So
+    the settings drift the same way a managed file drifts, and until now
+    nothing said so: an integration adopted before a rule changed kept the old
+    one for as long as nobody read the merge box. Two repositories carried a
+    duplicated set of checks for months that way.
+
+    Returns None when GitHub cannot be asked at all - no CLI, no credentials,
+    a fork's pull request. Not knowing is not the same as being wrong, and a
+    contributor who cannot see the settings must not be told their commit
+    broke them.
+    """
+    wanted = contexts(root)
+    if not wanted:
+        return ()
+    try:
+        name = slug(root, repo)
+        branch = default_branch(name)
+        required = current(name, branch)
+    except NoGhError:
+        return None
+
+    problems: list[str] = []
+    if required is None:
+        problems.append(
+            f"no ruleset on {branch}: it accepts a direct push, a force-push "
+            "and a deletion. Run 'ha-standards protect'."
+        )
+    elif set(required) != set(wanted):
+        missing = sorted(set(wanted) - set(required))
+        stale = sorted(set(required) - set(wanted))
+        if missing:
+            problems.append(f"not required, though reported: {', '.join(missing)}")
+        if stale:
+            problems.append(
+                f"required, though nothing reports them: {', '.join(stale)}"
+            )
+
+    try:
+        _gh("api", f"repos/{name}/branches/{branch}/protection", "--silent")
+    except NoGhError:
+        pass  # No branch protection is the wanted state.
+    else:
+        problems.append(
+            "a branch protection requires checks a second time, next to the "
+            "ruleset. GitHub lists every check twice and the two can drift "
+            "apart. Run 'ha-standards protect'."
+        )
+    return tuple(problems)
+
+
 def apply(root: Path, repo: str | None = None) -> Protection:
     """Point the default branch's protection at the checks this repo reports."""
     wanted = contexts(root)
