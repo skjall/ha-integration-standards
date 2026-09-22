@@ -34,17 +34,33 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    """Fail when a managed file has drifted."""
+    """Fail when a managed file, or the repository itself, has drifted."""
     it = _integration(args.path)
+    failed = False
+
     problems = sync.drift(it)
-    if not problems:
+    if problems:
+        failed = True
+        print("Managed files have drifted from ha-integration-standards\n")
+        for path, reason in sorted(problems.items()):
+            print(f"  FAIL  {path}: {reason}")
+        print("\nRun 'ha-standards sync' to bring them back.\n")
+    else:
         print(f"Managed files: in step with ha-integration-standards {__version__}.")
-        return 0
-    print("Managed files have drifted from ha-integration-standards\n")
-    for path, reason in sorted(problems.items()):
-        print(f"  FAIL  {path}: {reason}")
-    print("\nRun 'ha-standards sync' to bring them back.")
-    return 1
+
+    settings = protect.audit(it.root, args.repo)
+    if settings is None:
+        # Nobody is told their commit broke a setting they cannot see.
+        print("Repository settings: not checked, GitHub could not be asked.")
+    elif settings:
+        failed = True
+        print("\nRepository settings have drifted\n")
+        for reason in settings:
+            print(f"  FAIL  {reason}")
+    else:
+        print("Repository settings: the ruleset requires what the workflows report.")
+
+    return 1 if failed else 0
 
 
 def _repository_root(where: str | None) -> Path:
@@ -192,6 +208,7 @@ def cmd_new(args: argparse.Namespace) -> int:
     print("  .venv/bin/pre-commit install")
     print("Once the repository exists on GitHub and main is pushed:")
     print("  ha-standards protect      # not optional: nothing else protects main")
+    print("  ha-standards check        # says so if that never happened")
     print("With a package under lib/, protect also prints what to register on")
     print("pypi.org before the first release - only the account owner can.")
     return 0
@@ -217,8 +234,11 @@ def main(argv: list[str] | None = None) -> int:
     do_sync.add_argument("path", nargs="?")
     do_sync.set_defaults(func=cmd_sync)
 
-    check = sub.add_parser("check", help="fail when a managed file has drifted")
+    check = sub.add_parser(
+        "check", help="fail when a managed file or a repository setting has drifted"
+    )
     check.add_argument("path", nargs="?")
+    check.add_argument("--repo", help="owner/name (default: the checkout's remote)")
     check.set_defaults(func=cmd_check)
 
     guard = sub.add_parser(

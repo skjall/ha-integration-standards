@@ -535,3 +535,72 @@ def test_protect_works_in_a_repository_without_an_integration(
     printed = capsys.readouterr().out
     assert "lint" in printed
     assert "test" in printed
+
+
+def test_audit_is_quiet_when_the_settings_are_right(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}], ruleset_contexts=["lint", "test"]
+    )
+    monkeypatch.setattr(protect, "_gh", github)
+
+    assert protect.audit(tmp_path) == ()
+
+
+def test_audit_reports_a_branch_that_nothing_protects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A new repository is wide open and nothing complains while it is."""
+    _workflows(tmp_path, quality=QUALITY)
+    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+
+    [problem] = protect.audit(tmp_path)
+    assert "no ruleset on main" in problem
+
+
+def test_audit_reports_checks_that_drifted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A renamed job leaves a rule waiting for a name nobody reports."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "gone-with-the-old-workflow"],
+    )
+    monkeypatch.setattr(protect, "_gh", github)
+
+    problems = " ".join(protect.audit(tmp_path) or ())
+    assert "test" in problems
+    assert "gone-with-the-old-workflow" in problems
+
+
+def test_audit_reports_a_second_source_for_the_same_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The duplication two integrations carried unnoticed for months."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        protected=["lint", "test"],
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "test"],
+    )
+    monkeypatch.setattr(protect, "_gh", github)
+
+    [problem] = protect.audit(tmp_path)
+    assert "a branch protection requires checks a second time" in problem
+
+
+def test_audit_says_nothing_when_github_cannot_be_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fork's pull request has no credentials, and no fault either."""
+    _workflows(tmp_path, quality=QUALITY)
+
+    def refuse(*args: str, **kwargs: object) -> str:
+        raise protect.NoGhError("the GitHub CLI ('gh') is not installed")
+
+    monkeypatch.setattr(protect, "_gh", refuse)
+
+    assert protect.audit(tmp_path) is None

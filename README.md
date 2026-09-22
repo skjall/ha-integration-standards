@@ -54,7 +54,9 @@ git commit -am "chore: take ha-integration-standards 0.2.0"
 ```
 
 Updating is deliberate: you see the diff of the rules before they gate your
-next commit. `ha-standards check` reports a managed file that has drifted.
+next commit. `ha-standards check` reports a managed file that has drifted,
+and a repository setting that was never made or no longer matches the
+workflows.
 
 ## Start a new integration
 
