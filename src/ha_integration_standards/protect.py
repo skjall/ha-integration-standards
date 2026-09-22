@@ -95,8 +95,13 @@ def contexts(root: Path) -> tuple[str, ...]:
     return tuple(dict.fromkeys(found))
 
 
-def _gh(*args: str, stdin: str | None = None) -> str:
-    """Run the GitHub CLI; raise NoGhError when it is unusable or refuses."""
+def _gh(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
+    """Run the GitHub CLI; raise NoGhError when it is unusable or refuses.
+
+    cwd matters: `gh repo view` without a slug reports whatever repository
+    the working directory belongs to, which is not necessarily the one being
+    protected.
+    """
     if shutil.which("gh") is None:
         raise NoGhError("the GitHub CLI ('gh') is not installed")
     done = subprocess.run(
@@ -105,18 +110,19 @@ def _gh(*args: str, stdin: str | None = None) -> str:
         text=True,
         check=False,
         input=stdin,
+        cwd=cwd,
     )
     if done.returncode != 0:
         raise NoGhError(done.stderr.strip() or f"gh {args[0]} failed")
     return done.stdout
 
 
-def slug(repo: str | None = None) -> str:
+def slug(root: Path, repo: str | None = None) -> str:
     """Return owner/name for the repository being worked on."""
     if repo:
         return repo
     return _gh(
-        "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"
+        "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", cwd=root
     ).strip()
 
 
@@ -157,7 +163,7 @@ def apply(root: Path, repo: str | None = None) -> Protection:
     if not wanted:
         raise NoGhError(f"no pull request checks found in {WORKFLOWS}")
 
-    name = slug(repo)
+    name = slug(root, repo)
     branch = default_branch(name)
     before = current(name, branch)
 

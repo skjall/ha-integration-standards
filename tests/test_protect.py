@@ -109,7 +109,7 @@ def test_apply_sends_exactly_what_the_workflows_report(
     _workflows(tmp_path, quality=QUALITY, extra=NAMED)
     sent: dict[str, object] = {}
 
-    def fake_gh(*args: str, stdin: str | None = None) -> str:
+    def fake_gh(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
         if args[0] == "repo":
             return "acme/kettle\n" if "nameWithOwner" in args else "main\n"
         if args[1] == "--method":
@@ -142,7 +142,7 @@ def test_an_unprotected_branch_is_an_outcome_not_a_fault(
 ) -> None:
     _workflows(tmp_path, quality=QUALITY)
 
-    def fake_gh(*args: str, stdin: str | None = None) -> str:
+    def fake_gh(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
         if args[0] == "repo":
             return "acme/kettle\n" if "nameWithOwner" in args else "main\n"
         if args[1] == "--method":
@@ -162,7 +162,7 @@ def test_dry_run_prints_and_changes_nothing(
 ) -> None:
     _workflows(project, quality=QUALITY)
 
-    def refuse(*args: str, stdin: str | None = None) -> str:
+    def refuse(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
         raise AssertionError("--dry-run must not call gh")
 
     monkeypatch.setattr(protect, "_gh", refuse)
@@ -176,7 +176,7 @@ def test_a_missing_gh_is_reported_not_raised(
 ) -> None:
     _workflows(project, quality=QUALITY)
 
-    def refuse(*args: str, stdin: str | None = None) -> str:
+    def refuse(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
         raise protect.NoGhError("the GitHub CLI ('gh') is not installed")
 
     monkeypatch.setattr(protect, "_gh", refuse)
