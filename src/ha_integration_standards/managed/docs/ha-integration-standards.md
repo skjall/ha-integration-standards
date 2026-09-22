@@ -109,6 +109,32 @@ Two traps:
 PyPI publishing uses **Trusted Publishing** — no token is stored anywhere; the
 trust is configured once on pypi.org for that workflow.
 
+## The branch protection names the checks
+
+A required status check is a **name**, not a reference to a workflow. Rename a
+job, split a workflow, or adopt this package and drop the one the repository
+started with, and the protection waits for a context nobody reports any more.
+GitHub shows that as *"Expected — Waiting for status to be reported"* with no
+job behind it, and nothing can be merged: the checks that do run are green and
+irrelevant, because they are not the ones named.
+
+So the names are never written down twice:
+
+```bash
+ha-standards protect            # --dry-run prints them, changes nothing
+```
+
+It reads every job of every workflow that runs on a pull request and requires
+exactly those on the default branch, with `strict` set so a branch catches up
+with the base before it merges. Run it after adopting this package, and again
+whenever a job is added or renamed. It touches nothing else — who may merge
+and whether a review is needed stay as the repository has them.
+
+Matrix jobs are left out. They report one context per combination, with the
+values in brackets (`test (3.13)`), and guessing that spelling wrongly is the
+exact failure the command exists to fix. A job that must be required and is a
+matrix has to be named by hand.
+
 ## Bluetooth
 
 Applies to an integration that talks BLE; ignore it otherwise.
