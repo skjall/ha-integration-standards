@@ -171,6 +171,22 @@ Two traps:
 PyPI publishing uses **Trusted Publishing** — no token is stored anywhere; the
 trust is configured once on pypi.org for that workflow.
 
+**That configuration is a step only the owner of the PyPI account can take,
+and nothing fails loudly while it is missing.** The first release tags,
+writes the changelog and creates the GitHub release; only the publishing job
+fails, and the manifest now pins a package nobody can install. Home Assistant
+then cannot load the integration anywhere but on a machine the wheel was
+copied to by hand.
+
+So before the first release of a repository with a package under `lib/`, the
+account owner registers a *pending publisher* at
+<https://pypi.org/manage/account/publishing/>. `ha-standards protect` asks
+PyPI whether the package exists and, while it does not, prints the five
+values the form asks for. **Hand them to the user in full, straight away** -
+not as a later to-do, and not after the release has already failed. A release
+that failed to publish is fixed by re-running its workflow once the publisher
+is registered.
+
 ## The branch protection names the checks
 
 A required status check is a **name**, not a reference to a workflow. Rename a
@@ -205,6 +221,9 @@ around the checks:
   request, which GitHub otherwise refuses;
 - where `lib/` builds a package, the **`pypi` environment** its publishing job
   runs in, limited to the default branch and to `v*` tags.
+
+For a package under `lib/` it also asks PyPI whether the package is
+published, and prints what pypi.org still needs if it is not - see *Release*.
 
 Each step reads what is there and writes what is wanted, so running it again
 is always safe.

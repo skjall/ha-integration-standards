@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 from pathlib import Path
 
 import pytest
@@ -59,6 +61,27 @@ jobs:
     runs-on: ubuntu-latest
     steps: [{run: python -m build}]
 """
+
+
+PUBLISH = """
+name: Release
+on:
+  push:
+    branches: [main]
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/download-artifact@v4
+      - uses: pypa/gh-action-pypi-publish@release/v1
+"""
+
+
+def _package(root: Path, name: str = "kettle-protocol") -> None:
+    where = root / "lib" / "kettle_protocol"
+    where.mkdir(parents=True)
+    (where / "pyproject.toml").write_text(f'[project]\nname = "{name}"\n')
 
 
 def _workflows(root: Path, **files: str) -> Path:
@@ -237,7 +260,7 @@ def test_no_package_no_pypi_environment(
     monkeypatch.setattr(protect, "_gh", github)
     done = protect.apply(tmp_path)
 
-    assert not done.pypi
+    assert done.publishers == ()
     assert not any("environments" in path for _, path, _ in github.writes)
 
 
@@ -246,13 +269,13 @@ def test_a_package_gets_its_pypi_environment(
 ) -> None:
     """Limited to the default branch and release tags; nothing twice."""
     _workflows(tmp_path, quality=QUALITY)
-    (tmp_path / "lib" / "kettle_protocol").mkdir(parents=True)
-    (tmp_path / "lib" / "kettle_protocol" / "pyproject.toml").write_text("")
+    _package(tmp_path)
     github = FakeGitHub(policies=[{"name": "main", "type": "branch"}])
     monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(protect, "on_pypi", lambda name: True)
     done = protect.apply(tmp_path)
 
-    assert done.pypi
+    assert [p.project for p in done.publishers] == ["kettle-protocol"]
     [(method, body)] = github.written("repos/acme/kettle/environments/pypi")
     assert method == "PUT"
     assert body == {
@@ -265,6 +288,123 @@ def test_a_package_gets_its_pypi_environment(
         "repos/acme/kettle/environments/pypi/deployment-branch-policies"
     )
     assert added == [("POST", ["-f", "name=v*", "-f", "type=tag", "--silent"])]
+
+
+def test_the_publisher_names_what_pypi_org_asks_for(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The workflow by file name, which is what pypi.org matches on."""
+    _workflows(tmp_path, quality=QUALITY, release=PUBLISH)
+    _package(tmp_path)
+    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(protect, "on_pypi", lambda name: False)
+    [publisher] = protect.apply(tmp_path).publishers
+
+    assert publisher == protect.Publisher(
+        project="kettle-protocol",
+        owner="acme",
+        repository="kettle",
+        workflow="release.yml",
+        environment="pypi",
+        on_pypi=False,
+    )
+
+
+def test_no_upload_step_no_workflow_name(tmp_path: Path) -> None:
+    _workflows(tmp_path, quality=QUALITY, release=RELEASE)
+    assert protect.publishing_workflow(tmp_path) is None
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, outcome: object) -> list[str]:
+    asked: list[str] = []
+
+    def urlopen(url: str, timeout: float) -> io.BytesIO:
+        asked.append(url)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return io.BytesIO(b"{}")
+
+    monkeypatch.setattr(protect.urllib.request, "urlopen", urlopen)
+    return asked
+
+
+def test_pypi_knows_the_package(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked = _answer(monkeypatch, None)
+    assert protect.on_pypi("kettle-protocol") is True
+    assert asked == ["https://pypi.org/pypi/kettle-protocol/json"]
+
+
+def test_a_404_means_not_published(monkeypatch: pytest.MonkeyPatch) -> None:
+    _answer(
+        monkeypatch,
+        urllib.error.HTTPError("u", 404, "Not Found", None, None),  # type: ignore[arg-type]
+    )
+    assert protect.on_pypi("kettle-protocol") is False
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        urllib.error.HTTPError("u", 503, "Unavailable", None, None),  # type: ignore[arg-type]
+        urllib.error.URLError("no network"),
+        TimeoutError(),
+    ],
+)
+def test_pypi_that_cannot_be_asked_is_not_a_no(
+    monkeypatch: pytest.MonkeyPatch, failure: Exception
+) -> None:
+    _answer(monkeypatch, failure)
+    assert protect.on_pypi("kettle-protocol") is None
+
+
+def test_protect_says_what_to_register_on_pypi(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workflows(project, quality=QUALITY, release=PUBLISH)
+    _package(project)
+    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(protect, "on_pypi", lambda name: False)
+
+    assert main(["protect", str(project)]) == 0
+    out = capsys.readouterr().out
+    assert "'kettle-protocol' is not on PyPI yet" in out
+    assert protect.PYPI_PUBLISHING in out
+    for line in (
+        "PyPI Project Name  kettle-protocol",
+        "Owner              acme",
+        "Repository name    kettle",
+        "Workflow name      release.yml",
+        "Environment name   pypi",
+    ):
+        assert line in out
+
+
+def test_protect_is_quiet_about_a_published_package(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workflows(project, quality=QUALITY, release=PUBLISH)
+    _package(project)
+    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(protect, "on_pypi", lambda name: True)
+
+    assert main(["protect", str(project)]) == 0
+    out = capsys.readouterr().out
+    assert "'kettle-protocol' is on PyPI" in out
+    assert "pending publisher" not in out
+
+
+def test_protect_does_not_claim_what_pypi_did_not_say(
+    project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workflows(project, quality=QUALITY, release=PUBLISH)
+    _package(project)
+    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(protect, "on_pypi", lambda name: None)
+
+    assert main(["protect", str(project)]) == 0
+    out = capsys.readouterr().out
+    assert "could not be asked about 'kettle-protocol'" in out
+    assert "PyPI Project Name  kettle-protocol" in out
 
 
 def test_an_unprotected_branch_is_an_outcome_not_a_fault(

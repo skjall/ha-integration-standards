@@ -112,6 +112,13 @@ release-please open its pull request, and - where `lib/` builds a package -
 the `pypi` environment, limited to the default branch and `v*` tags. For a new
 integration it is the step after the first push of `main`.
 
+One step it cannot take: pypi.org has to be told to trust the publishing
+workflow, by the owner of the PyPI account. While the package is not on PyPI,
+`protect` prints the values for the pending publisher form at
+<https://pypi.org/manage/account/publishing/> - project name, owner,
+repository, workflow file and environment. Until that is done every release
+publishes nothing, and the integration pins a package nobody can install.
+
 ## Configuration
 
 Everything has a default that works. A project writes a key down only when it

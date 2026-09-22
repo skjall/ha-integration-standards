@@ -25,6 +25,13 @@ every integration of this family needs:
 - where lib/ builds a package, the 'pypi' environment its publishing job runs
   in, limited to the default branch and to release tags.
 
+One step cannot be taken from here: pypi.org has to be told to trust the
+publishing workflow, by the owner of the PyPI account. Until that is done the
+first release publishes nothing - the tag, the changelog and the GitHub
+release are all there, and the manifest pins a package nobody can install. So
+the run asks PyPI whether the package exists, and when it does not, prints
+exactly what to enter on pypi.org.
+
 Every step reads what is there and writes what is wanted, so running it again
 changes nothing that is already right.
 """
@@ -34,16 +41,38 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tomllib
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 WORKFLOWS = Path(".github/workflows")
+PYPI_PUBLISHING = "https://pypi.org/manage/account/publishing/"
+_PUBLISH_ACTION = "pypa/gh-action-pypi-publish"
 
 
 class NoGhError(Exception):
     """The GitHub CLI is missing, not logged in, or refused the call."""
+
+
+@dataclass(frozen=True)
+class Publisher:
+    """What pypi.org needs to trust the workflow that publishes a package.
+
+    The field names follow the form at PYPI_PUBLISHING, so they can be copied
+    across one by one.
+    """
+
+    project: str
+    owner: str
+    repository: str
+    workflow: str | None
+    environment: str
+    # None when PyPI could not be asked.
+    on_pypi: bool | None
 
 
 @dataclass(frozen=True)
@@ -55,7 +84,7 @@ class Protection:
     contexts: tuple[str, ...]
     before: tuple[str, ...] | None
     ruleset: str = "created"
-    pypi: bool = False
+    publishers: tuple[Publisher, ...] = ()
 
     @property
     def dropped(self) -> tuple[str, ...]:
@@ -214,14 +243,14 @@ def apply(root: Path, repo: str | None = None) -> Protection:
         "can_approve_pull_request_reviews=true",
         "--silent",
     )
-    pypi = _pypi_environment(root, name, branch)
+    publishers = _pypi_environment(root, name, branch)
     return Protection(
         repo=name,
         branch=branch,
         contexts=wanted,
         before=before,
         ruleset=ruleset,
-        pypi=pypi,
+        publishers=publishers,
     )
 
 
@@ -285,15 +314,17 @@ def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
     return outcome
 
 
-def _pypi_environment(root: Path, repo: str, branch: str) -> bool:
+def _pypi_environment(root: Path, repo: str, branch: str) -> tuple[Publisher, ...]:
     """Give a package from lib/ the environment its publishing job runs in.
 
     Trusted Publishing on pypi.org names this environment, and limiting it to
     the default branch and release tags keeps a pull request from publishing.
-    Returns whether there was a package to do it for.
+    Returns what pypi.org needs to know about each package; nothing when
+    lib/ builds none.
     """
-    if not any((root / "lib").glob("*/pyproject.toml")):
-        return False
+    names = packages(root)
+    if not names:
+        return ()
     _gh(
         "api",
         "--method",
@@ -329,4 +360,61 @@ def _pypi_environment(root: Path, repo: str, branch: str) -> bool:
                 f"type={kind}",
                 "--silent",
             )
-    return True
+    owner, _, repository = repo.partition("/")
+    workflow = publishing_workflow(root)
+    return tuple(
+        Publisher(
+            project=name,
+            owner=owner,
+            repository=repository,
+            workflow=workflow,
+            environment="pypi",
+            on_pypi=on_pypi(name),
+        )
+        for name in names
+    )
+
+
+def packages(root: Path) -> tuple[str, ...]:
+    """Return the distribution names lib/ builds."""
+    names = []
+    for path in sorted((root / "lib").glob("*/pyproject.toml")):
+        with path.open("rb") as file:
+            name = tomllib.load(file).get("project", {}).get("name")
+        if name:
+            names.append(str(name))
+    return tuple(names)
+
+
+def publishing_workflow(root: Path) -> str | None:
+    """Return the file name of the workflow that uploads to PyPI.
+
+    pypi.org trusts a workflow by its file name, not by its title, so this is
+    the name the form asks for.
+    """
+    for path in sorted((root / WORKFLOWS).glob("*.y*ml")):
+        try:
+            workflow = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        if not isinstance(workflow, dict):
+            continue
+        for job in (workflow.get("jobs") or {}).values():
+            for step in (job or {}).get("steps") or []:
+                if str((step or {}).get("uses", "")).startswith(_PUBLISH_ACTION):
+                    return path.name
+    return None
+
+
+def on_pypi(name: str) -> bool | None:
+    """Ask PyPI whether the project exists; None when PyPI cannot be asked."""
+    url = f"https://pypi.org/pypi/{name}/json"
+    try:
+        with urllib.request.urlopen(url, timeout=10):
+            return True
+    except urllib.error.HTTPError as err:
+        if err.code == 404:
+            return False
+        return None
+    except (urllib.error.URLError, TimeoutError):
+        return None
