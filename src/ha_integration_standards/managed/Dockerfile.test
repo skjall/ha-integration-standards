@@ -7,7 +7,7 @@ FROM python:3.14
 COPY requirements-test.txt scripts/ha_test_requirements.py /tmp/setup/
 # Only the manifest, not the source: it is what declares the requirements, and
 # copying it alone means a code change does not rebuild the whole image.
-COPY custom_components/*/manifest.json /tmp/setup/
+COPY custom_components/*/manifest.json /tmp/setup/{{local_packages}}
 
 # What the integration imports, and what the Home Assistant components it
 # depends on need, both read from files that already exist; see the script for
