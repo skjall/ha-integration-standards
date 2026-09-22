@@ -1,0 +1,7 @@
+{
+  "entity": {
+    "sensor": {
+      "temperature": { "default": "mdi:thermometer" }
+    }
+  }
+}

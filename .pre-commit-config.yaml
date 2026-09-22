@@ -1,0 +1,36 @@
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.8
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: local
+    hooks:
+      # The commit-message gate this package ships, used on itself.
+      - id: commit-message
+        name: Commit message - Conventional Commits, in English
+        entry: ha-commit-message
+        language: system
+        stages: [commit-msg]
+
+      - id: tests
+        name: Tests
+        entry: .venv/bin/pytest -q
+        language: system
+        pass_filenames: false
+        always_run: true

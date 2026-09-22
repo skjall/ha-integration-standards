@@ -1,0 +1,53 @@
+# The package that checks other repositories has to be checked itself.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["*.md", "LICENSE"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # The floor is what requires-python promises; the ceiling is what
+        # Home Assistant itself runs on.
+        python-version: ["3.12", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e . pytest
+      - run: pytest -q
+
+  scaffold:
+    # A scaffold that does not pass its own gates would ship broken projects.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - run: pip install -e .
+      - name: Create an integration from the scaffold
+        run: |
+          ha-standards new /tmp/acme --domain acme_kettle --owner example \
+            --name "Acme Kettle"
+      - name: It has to hold what it claims
+        working-directory: /tmp/acme
+        run: ha-quality-scale

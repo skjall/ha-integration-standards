@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add {{name}}",
+        "data": { "host": "Host" },
+        "data_description": { "host": "The address the device answers on." }
+      },
+      "reconfigure": {
+        "title": "Reconfigure {{name}}",
+        "description": "Point this entry at a different device.",
+        "data": { "host": "Host" }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the device."
+    },
+    "abort": {
+      "already_configured": "This device is already set up.",
+      "reconfigure_successful": "The entry now points at the new device."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": { "name": "Temperature" }
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "{host} did not answer."
+    },
+    "command_failed": {
+      "message": "The device refused {command}."
+    }
+  }
+}

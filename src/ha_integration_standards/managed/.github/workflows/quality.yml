@@ -1,0 +1,17 @@
+# The gates, run in CI exactly as they run before a commit. The heavy lifting
+# lives in the reusable workflow, so raising the ref here is how this project
+# takes a newer set of rules.
+name: Quality
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "LICENSE"
+  pull_request:
+    branches: [main]
+
+jobs:
+  standards:
+    uses: {{owner}}/ha-integration-standards/.github/workflows/ha-integration.yml@v0

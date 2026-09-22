@@ -1,0 +1,17 @@
+# Test environment. Home Assistant needs Python 3.14.2 from 2026.3 onwards,
+# which most systems do not have yet, so this image pins the exact version the
+# integration targets. The full Python image rather than -slim, because some
+# wheels are built from source and need the libc headers for that.
+FROM python:3.14
+
+COPY requirements-test.txt scripts/ha_test_requirements.py /tmp/setup/
+
+# The requirements of the Home Assistant components this integration depends on
+# come from the installed release itself; see the script for why they are not
+# pinned by hand.
+RUN pip install --no-cache-dir -r /tmp/setup/requirements-test.txt \
+ && python /tmp/setup/ha_test_requirements.py > /tmp/setup/components.txt \
+ && pip install --no-cache-dir -r /tmp/setup/components.txt \
+ && rm -rf /tmp/setup
+
+WORKDIR /app

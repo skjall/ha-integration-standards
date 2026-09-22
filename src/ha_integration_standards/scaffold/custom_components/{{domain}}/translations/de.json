@@ -1,0 +1,36 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "{{name}} hinzufügen",
+        "data": { "host": "Adresse" },
+        "data_description": { "host": "Die Adresse, unter der das Gerät antwortet." }
+      },
+      "reconfigure": {
+        "title": "{{name}} neu einrichten",
+        "description": "Diesen Eintrag auf ein anderes Gerät zeigen lassen.",
+        "data": { "host": "Adresse" }
+      }
+    },
+    "error": {
+      "cannot_connect": "Das Gerät war nicht erreichbar."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits eingerichtet.",
+      "reconfigure_successful": "Der Eintrag zeigt jetzt auf das neue Gerät."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "temperature": { "name": "Temperatur" }
+    }
+  },
+  "exceptions": {
+    "cannot_connect": {
+      "message": "{host} hat nicht geantwortet."
+    },
+    "command_failed": {
+      "message": "Das Gerät hat {command} abgelehnt."
+    }
+  }
+}

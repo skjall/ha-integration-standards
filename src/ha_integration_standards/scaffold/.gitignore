@@ -1,0 +1,16 @@
+.env
+.env.local
+
+__pycache__/
+*.pyc
+.venv/
+
+# Vendor app binaries and verbatim extracted third-party code. The protocol
+# description in docs/protocol.md is our own write-up and stays versioned;
+# the material it was derived from does not belong in this repository.
+reference/
+*.apk
+
+# Testartefakte - alles, was ein Lauf erzeugt, landet hier
+.artefakte/
+.ruff_cache/

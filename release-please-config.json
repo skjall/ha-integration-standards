@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "python",
+  "packages": {
+    ".": {
+      "changelog-path": "CHANGELOG.md",
+      "include-component-in-tag": false,
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "src/ha_integration_standards/__init__.py"
+        },
+        {
+          "type": "generic",
+          "path": ".pre-commit-hooks.yaml"
+        }
+      ]
+    }
+  }
+}

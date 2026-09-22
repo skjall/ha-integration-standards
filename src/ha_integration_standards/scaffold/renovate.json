@@ -1,0 +1,88 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "baseBranchPatterns": [
+    "main"
+  ],
+  "semanticCommits": "enabled",
+  "semanticCommitType": "deps",
+  "semanticCommitScope": null,
+  "constraints": {
+    "python": "3.14"
+  },
+  "pre-commit": {
+    "enabled": true
+  },
+  "packageRules": [
+    {
+      "description": "The protocol package lives in this repository and release-please raises its pin in manifest.json together with the version in lib/. A Renovate PR for it would race that commit.",
+      "matchPackageNames": [
+        "{{lib_package}}"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "The runtime dependency of the protocol package. It ends up in every install, so a human looks at it.",
+      "matchFileNames": [
+        "lib/{{lib_module}}/pyproject.toml"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "reviewers": [
+        "{{owner}}"
+      ]
+    },
+    {
+      "matchCategories": [
+        "python"
+      ],
+      "groupName": "Python dependencies",
+      "matchPackageNames": [
+        "*"
+      ]
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Auto-merge low-risk updates once CI is green; no review request needed. CI runs the full test suite, mypy --strict and the quality-scale gate, so a green run is a real statement.",
+      "matchUpdateTypes": [
+        "minor",
+        "patch",
+        "pin",
+        "digest"
+      ],
+      "automerge": true,
+      "platformAutomerge": true
+    },
+    {
+      "description": "Major updates: never auto-merge, request review",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "automerge": false,
+      "reviewers": [
+        "{{owner}}"
+      ]
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "enabled": true
+  },
+  "dependencyDashboard": true,
+  "prConcurrentLimit": 2,
+  "labels": [
+    "dependencies",
+    "type: chore"
+  ],
+  "assignees": [
+    "{{owner}}"
+  ]
+}

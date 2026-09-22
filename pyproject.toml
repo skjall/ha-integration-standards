@@ -1,0 +1,57 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ha-integration-standards"
+version = "0.1.0"
+description = "Shared quality gates and scaffolding for custom Home Assistant integrations"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE" }
+authors = [{ name = "Skjall" }]
+keywords = ["home-assistant", "quality-scale", "pre-commit"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Quality Assurance",
+]
+dependencies = ["PyYAML>=6.0"]
+
+[project.urls]
+Homepage = "https://github.com/skjall/ha-integration-standards"
+Issues = "https://github.com/skjall/ha-integration-standards/issues"
+
+[project.scripts]
+ha-standards = "ha_integration_standards.cli:main"
+ha-quality-scale = "ha_integration_standards.checks.quality_scale:main"
+ha-coverage = "ha_integration_standards.checks.coverage:main"
+ha-commit-message = "ha_integration_standards.checks.commit_message:main"
+ha-tests = "ha_integration_standards.runner:tests"
+ha-types = "ha_integration_standards.runner:types"
+ha-sync = "ha_integration_standards.cli:main_check"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ha_integration_standards"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/ha_integration_standards/managed" = "ha_integration_standards/managed"
+"src/ha_integration_standards/scaffold" = "ha_integration_standards/scaffold"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+# The scaffold is not Python until its placeholders are filled in.
+extend-exclude = ["src/ha_integration_standards/scaffold"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "UP", "B", "SIM", "RUF", "D", "TRY"]
+ignore = ["D203", "D213", "TRY003"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests say what they check in their name.
+"tests/*" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"

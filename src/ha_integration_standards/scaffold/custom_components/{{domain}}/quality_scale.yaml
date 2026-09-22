@@ -1,0 +1,98 @@
+# Whatever is marked done here, the ha-quality-scale hook verifies on every
+# commit, as far as a machine can. If the code falls behind, the commit fails -
+# so the tier cannot be kept by claiming it, only by holding it.
+#
+# This is where a new integration starts: everything the scaffold genuinely
+# holds is done, the rest is todo. Move a rule to done when the code does it,
+# not when you intend to.
+rules:
+  # Bronze
+  action-setup:
+    status: exempt
+    comment: The integration registers no service actions.
+  appropriate-polling: done
+  brands:
+    status: todo
+    comment: Needs brand/icon.png.
+  common-modules: done
+  config-flow: done
+  config-flow-test-coverage: done
+  dependency-transparency:
+    status: todo
+    comment: Needs the device protocol in a published package.
+  docs-actions:
+    status: exempt
+    comment: The integration provides no actions.
+  docs-conditions:
+    status: exempt
+    comment: The integration provides no conditions.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  docs-triggers:
+    status: exempt
+    comment: The integration provides no triggers.
+  entity-event-setup:
+    status: exempt
+    comment: Every subscription is handled by the coordinator base class.
+  entity-unique-id: done
+  has-entity-name: done
+  runtime-data: done
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+
+  # Silver
+  action-exceptions: done
+  config-entry-unloading: done
+  docs-configuration-parameters: done
+  docs-installation-parameters: done
+  entity-unavailable: done
+  integration-owner: done
+  log-when-unavailable: done
+  parallel-updates: done
+  reauthentication-flow:
+    status: todo
+    comment: The device needs no credentials yet.
+  test-coverage: done
+
+  # Gold
+  devices: done
+  diagnostics: done
+  discovery:
+    status: todo
+    comment: Add a matcher to manifest.json and a step to the flow.
+  discovery-update-info:
+    status: todo
+  docs-data-update: done
+  docs-examples: done
+  docs-known-limitations: done
+  docs-supported-devices: done
+  docs-supported-functions: done
+  docs-troubleshooting: done
+  docs-use-cases: done
+  dynamic-devices:
+    status: exempt
+    comment: One config entry is one device.
+  entity-category:
+    status: todo
+  entity-device-class: done
+  entity-disabled-by-default:
+    status: todo
+  entity-translations: done
+  exception-translations: done
+  icon-translations: done
+  reconfiguration-flow: done
+  repair-issues:
+    status: todo
+  stale-devices:
+    status: exempt
+    comment: One config entry is one device; removing the entry removes it.
+
+  # Platinum
+  async-dependency:
+    status: todo
+  inject-websession:
+    status: exempt
+    comment: The device is not reached over HTTP.
+  strict-typing: done
