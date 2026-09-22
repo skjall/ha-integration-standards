@@ -73,9 +73,35 @@ def cmd_protect(args: argparse.Namespace) -> int:
     print(f"\nRuleset '{done.branch}' {done.ruleset}: pull requests only,")
     print("  no force-push, no deletion, the same checks.")
     print("Workflows may open pull requests (release-please needs that).")
-    if done.pypi:
+    if done.publishers:
         print(f"Environment 'pypi' limited to {done.branch} and tags v*.")
+    for publisher in done.publishers:
+        _report_publisher(publisher)
     return 0
+
+
+def _report_publisher(publisher: protect.Publisher) -> None:
+    """Say whether pypi.org still has to be told to trust the workflow."""
+    if publisher.on_pypi:
+        print(f"Package '{publisher.project}' is on PyPI.")
+        return
+    if publisher.on_pypi is None:
+        print(f"\nPyPI could not be asked about '{publisher.project}'.")
+        print("If it is not published yet, the step below is still open.")
+    else:
+        print(f"\nPackage '{publisher.project}' is not on PyPI yet.")
+    print("Every release publishes nothing until the owner of the PyPI account")
+    print(f"adds a pending publisher at {protect.PYPI_PUBLISHING}")
+    print("(GitHub tab):\n")
+    print(f"  PyPI Project Name  {publisher.project}")
+    print(f"  Owner              {publisher.owner}")
+    print(f"  Repository name    {publisher.repository}")
+    print(
+        f"  Workflow name      {publisher.workflow or '(no workflow uploads to PyPI)'}"
+    )
+    print(f"  Environment name   {publisher.environment}")
+    print("\nA release that already failed to publish: re-run its workflow")
+    print("afterwards. Nothing here can do this step.")
 
 
 def cmd_adopt(args: argparse.Namespace) -> int:
@@ -147,6 +173,8 @@ def cmd_new(args: argparse.Namespace) -> int:
     print("  .venv/bin/pre-commit install")
     print("Once the repository exists on GitHub and main is pushed:")
     print("  ha-standards protect      # not optional: nothing else protects main")
+    print("With a package under lib/, protect also prints what to register on")
+    print("pypi.org before the first release - only the account owner can.")
     return 0
 
 
