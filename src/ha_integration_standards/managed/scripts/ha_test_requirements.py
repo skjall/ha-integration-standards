@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Print the requirements of the Home Assistant components we pull in.
+"""Print everything the tests need beyond Home Assistant itself.
 
-pytest-homeassistant-custom-component installs Home Assistant, but not what
-the components it pulls in need at runtime. Pinning those by hand means the
-numbers drift from the release being tested against, and a dependency bot
-keeps proposing bumps that must never be taken on their own. Reading them out
-of the installed release removes both problems: they are always exactly right,
-and there is nothing left to pin.
+Two sources, both read from files that already exist, so nothing here is ever
+maintained by hand:
 
-Which components to read is taken from the integration's own manifest, so this
-file never has to be edited.
+* The integration's own `requirements` - the libraries it imports at runtime.
+  Tests import the same modules, so they need the same libraries.
+* The requirements of the Home Assistant components it depends on (bluetooth,
+  usb, ...). pytest-homeassistant-custom-component installs Home Assistant but
+  not those. Pinning them by hand means the numbers drift from the release
+  being tested against, and a dependency bot keeps proposing bumps that must
+  never be taken on their own. Reading them out of the installed release
+  removes both problems: they are always exactly right, and there is nothing
+  left to pin.
 """
 
 from __future__ import annotations
@@ -28,31 +31,43 @@ def _components_directory() -> Path | None:
     return None
 
 
-def _wanted() -> list[str]:
-    """Return the components this integration declares as dependencies."""
+def _manifest() -> dict:
+    """Return the integration's manifest, or an empty dict."""
     for manifest in sorted(Path("custom_components").glob("*/manifest.json")):
-        data = json.loads(manifest.read_text(encoding="utf-8"))
-        wanted = list(data.get("dependencies", []))
-        # An integration that depends on bluetooth_adapters also needs what
-        # the bluetooth component itself pulls in.
-        if "bluetooth_adapters" in wanted:
-            wanted += ["bluetooth", "usb"]
-        return sorted(set(wanted))
-    return []
+        return json.loads(manifest.read_text(encoding="utf-8"))
+    return {}
+
+
+def _components(manifest: dict) -> list[str]:
+    """Return the Home Assistant components this integration depends on."""
+    wanted = list(manifest.get("dependencies", []))
+    # An integration that depends on bluetooth_adapters also needs what the
+    # bluetooth component itself pulls in.
+    if "bluetooth_adapters" in wanted:
+        wanted += ["bluetooth", "usb"]
+    return sorted(set(wanted))
 
 
 def main() -> int:
     """Print one requirement per line."""
+    manifest = _manifest()
+
+    # What the integration itself imports. Without this the tests fail at
+    # import time, and only in CI, because a locally built image usually still
+    # carries the library from an earlier install.
+    for requirement in manifest.get("requirements", []):
+        print(requirement)
+
     components = _components_directory()
     if components is None:
         print("Home Assistant is not installed", file=sys.stderr)
         return 1
 
-    for name in _wanted():
-        manifest = components / name / "manifest.json"
-        if not manifest.exists():
+    for name in _components(manifest):
+        component = components / name / "manifest.json"
+        if not component.exists():
             continue
-        for requirement in json.loads(manifest.read_text()).get("requirements", []):
+        for requirement in json.loads(component.read_text()).get("requirements", []):
             print(requirement)
     return 0
 

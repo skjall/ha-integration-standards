@@ -116,3 +116,24 @@ def test_no_hook_reaches_for_a_remote(project: Path) -> None:
         if "uses:" in line:
             action = line.split("uses:")[1].strip()
             assert action.startswith(published), f"private dependency: {action}"
+
+
+def test_the_requirements_reader_includes_the_integrations_own(project: Path) -> None:
+    """A library the integration imports has to reach the test environment."""
+    import json
+
+    manifest = project / "custom_components" / "acme" / "manifest.json"
+    data = json.loads(manifest.read_text())
+    data["requirements"] = ["acme-protocol==1.2.3"]
+    manifest.write_text(json.dumps(data))
+
+    main(["sync", str(project)])
+    result = subprocess.run(
+        [sys.executable, "scripts/ha_test_requirements.py"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    # Home Assistant is not installed here, so the component part exits 1 -
+    # but the integration's own requirement is printed before that.
+    assert "acme-protocol==1.2.3" in result.stdout
