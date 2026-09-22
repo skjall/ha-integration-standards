@@ -290,9 +290,9 @@ Never `--no-verify`.
 
 The gates under `scripts/_ha_standards/` are **written by
 ha-integration-standards, not maintained here**. They are vendored rather than
-fetched because this repository is public and its CI runs on GitHub: a hook
-that cloned a private tool would need a secret, and a pull request from a fork
-never gets one.
+fetched so that a checkout is all a build needs: no index, no network, no
+version resolver between a commit and its verdict, and a pull request from a
+fork runs exactly the same gates.
 
 So do not edit them. `run.py verify` hashes each file and runs before the
 other gates, precisely so that "make the check pass" cannot mean "change the

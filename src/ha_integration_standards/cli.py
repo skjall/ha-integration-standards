@@ -47,17 +47,33 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1
 
 
+def _repository_root(where: str | None) -> Path:
+    """Return the repository to protect.
+
+    Not an integration: what is required here is read out of the workflows,
+    and a repository that holds no integration has those too. This package
+    protects itself with the same command.
+    """
+    start = Path(where) if where else Path.cwd()
+    with contextlib.suppress(NoIntegrationError):
+        return find_integration(start).root
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return start
+
+
 def cmd_protect(args: argparse.Namespace) -> int:
     """Require exactly the checks a pull request here reports."""
-    it = _integration(args.path)
-    found = protect.contexts(it.root)
+    root = _repository_root(args.path)
+    found = protect.contexts(root)
     if args.dry_run:
-        print(f"Checks a pull request reports in {it.root.name}:\n")
+        print(f"Checks a pull request reports in {root.name}:\n")
         for name in found:
             print(f"  {name}")
         return 0 if found else 1
     try:
-        done = protect.apply(it.root, args.repo)
+        done = protect.apply(root, args.repo)
     except protect.NoGhError as err:
         print(f"  {err}", file=sys.stderr)
         return 1
