@@ -13,14 +13,23 @@ in the repository - every job of every workflow that runs on a pull request -
 and written to the default branch's protection. Add a job, run this again,
 and the protection follows.
 
+The names live in one place: the ruleset. GitHub offers two ways to require a
+check - the older branch protection and the newer rulesets - and a repository
+that carries both shows every check twice in the merge box, once per source.
+Worse, the two can disagree, and then the answer to "which checks must pass"
+depends on which page you are looking at. The ruleset can do everything the
+branch protection could, so it is the only one written here, and a branch
+protection left over from before is removed.
+
 The checks alone are not the whole protection, and a new repository has none
 of it until someone remembers. So the same run also holds the rest of what
 every integration of this family needs:
 
 - a ruleset on the default branch: changes arrive through a pull request, the
-  branch cannot be force-pushed or deleted, and the same checks must pass.
-  No approval is required, and administrators may bypass it - one maintainer
-  has nobody to wait for;
+  branch cannot be force-pushed or deleted, and the same checks must pass,
+  with a branch made to catch up with the base first. No approval is
+  required, and administrators may bypass it - one maintainer has nobody to
+  wait for;
 - workflow permissions that let release-please open its release pull request;
 - where lib/ builds a package, the 'pypi' environment its publishing job runs
   in, limited to the default branch and to release tags.
@@ -84,6 +93,8 @@ class Protection:
     contexts: tuple[str, ...]
     before: tuple[str, ...] | None
     ruleset: str = "created"
+    # Whether a branch protection requiring the same checks was taken away.
+    legacy_removed: bool = False
     publishers: tuple[Publisher, ...] = ()
 
     @property
@@ -181,22 +192,44 @@ def default_branch(repo: str) -> str:
     ).strip()
 
 
+def _ruleset_id(repo: str, branch: str) -> int | None:
+    """Return the id of the ruleset this package keeps, if it is there."""
+    existing = json.loads(_gh("api", f"repos/{repo}/rulesets") or "[]")
+    return next((r["id"] for r in existing if r.get("name") == branch), None)
+
+
 def current(repo: str, branch: str) -> tuple[str, ...] | None:
-    """Return the contexts the branch requires now, or None when unprotected."""
+    """Return the contexts the branch requires now, or None when nothing does."""
+    match = _ruleset_id(repo, branch)
+    if match is None:
+        return None
+    detail = json.loads(_gh("api", f"repos/{repo}/rulesets/{match}") or "{}")
+    for rule in detail.get("rules", []):
+        if rule.get("type") == "required_status_checks":
+            checks = rule.get("parameters", {}).get("required_status_checks", [])
+            return tuple(check["context"] for check in checks)
+    return ()
+
+
+def _drop_branch_protection(repo: str, branch: str) -> bool:
+    """Remove a branch protection the ruleset has made redundant.
+
+    Left in place it requires the same checks a second time, which GitHub
+    shows as every check listed twice, and lets the two drift apart until
+    nobody can say which set actually has to pass.
+    """
     try:
-        raw = _gh(
+        _gh(
             "api",
+            "--method",
+            "DELETE",
             f"repos/{repo}/branches/{branch}/protection",
-            "-q",
-            ".required_status_checks.contexts",
+            "--silent",
         )
     except NoGhError:
-        # An unprotected branch answers 404, which is an outcome, not a fault.
-        return None
-    text = raw.strip()
-    if not text:
-        return ()
-    return tuple(json.loads(text))
+        # No protection to remove answers 404, which is the wanted state.
+        return False
+    return True
 
 
 def apply(root: Path, repo: str | None = None) -> Protection:
@@ -209,27 +242,8 @@ def apply(root: Path, repo: str | None = None) -> Protection:
     branch = default_branch(name)
     before = current(name, branch)
 
-    body = {
-        # Every reported check, by name. 'strict' makes a branch catch up with
-        # the base before it may merge, so a green check is a check against
-        # what will actually be on the default branch.
-        "required_status_checks": {"strict": True, "contexts": list(wanted)},
-        # Left as the repository has them: not this package's decision.
-        "enforce_admins": None,
-        "required_pull_request_reviews": None,
-        "restrictions": None,
-    }
-    _gh(
-        "api",
-        "--method",
-        "PUT",
-        f"repos/{name}/branches/{branch}/protection",
-        "--input",
-        "-",
-        "--silent",
-        stdin=json.dumps(body),
-    )
     ruleset = _ruleset(name, branch, wanted)
+    legacy = _drop_branch_protection(name, branch)
     _gh(
         "api",
         "--method",
@@ -250,6 +264,7 @@ def apply(root: Path, repo: str | None = None) -> Protection:
         contexts=wanted,
         before=before,
         ruleset=ruleset,
+        legacy_removed=legacy,
         publishers=publishers,
     )
 
@@ -259,7 +274,11 @@ _ADMIN_ROLE = 5
 
 
 def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
-    """Create or update the default branch's ruleset; say which it was."""
+    """Create or update the default branch's ruleset; say which it was.
+
+    This is the only place the check names are written. See the module
+    docstring for why the branch protection is not a second one.
+    """
     body = {
         "name": branch,
         "target": "branch",
@@ -295,8 +314,7 @@ def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
             },
         ],
     }
-    existing = json.loads(_gh("api", f"repos/{repo}/rulesets") or "[]")
-    match = next((r["id"] for r in existing if r.get("name") == branch), None)
+    match = _ruleset_id(repo, branch)
     if match is None:
         path, method, outcome = f"repos/{repo}/rulesets", "POST", "created"
     else:

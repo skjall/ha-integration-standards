@@ -72,6 +72,9 @@ def cmd_protect(args: argparse.Namespace) -> int:
         print("\nThe branch was unprotected until now.")
     print(f"\nRuleset '{done.branch}' {done.ruleset}: pull requests only,")
     print("  no force-push, no deletion, the same checks.")
+    if done.legacy_removed:
+        print("Branch protection removed: it required the same checks a second")
+        print("  time, which GitHub lists twice and lets drift apart.")
     print("Workflows may open pull requests (release-please needs that).")
     if done.publishers:
         print(f"Environment 'pypi' limited to {done.branch} and tags v*.")
