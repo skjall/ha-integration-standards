@@ -134,10 +134,12 @@ class FakeGitHub:
         protected: list[str] | None = None,
         rulesets: list[dict[str, object]] | None = None,
         policies: list[dict[str, str]] | None = None,
+        ruleset_contexts: list[str] | None = None,
     ) -> None:
         self.protected = protected
         self.rulesets = rulesets or []
         self.policies = policies or []
+        self.ruleset_contexts = ruleset_contexts or []
         self.writes: list[tuple[str, str, object]] = []
 
     def __call__(
@@ -147,6 +149,10 @@ class FakeGitHub:
             return "acme/kettle\n" if "nameWithOwner" in args else "main\n"
         if args[1] == "--method":
             method, path = args[2], args[3]
+            if method == "DELETE" and path.endswith("/protection"):
+                if self.protected is None:
+                    raise protect.NoGhError("Branch not protected (HTTP 404)")
+                self.protected = None
             body: object = json.loads(stdin) if stdin else list(args[4:])
             self.writes.append((method, path, body))
             return ""
@@ -157,6 +163,21 @@ class FakeGitHub:
             return json.dumps(self.protected)
         if path.endswith("/rulesets"):
             return json.dumps(self.rulesets)
+        if "/rulesets/" in path:
+            return json.dumps(
+                {
+                    "rules": [
+                        {
+                            "type": "required_status_checks",
+                            "parameters": {
+                                "required_status_checks": [
+                                    {"context": c} for c in self.ruleset_contexts
+                                ]
+                            },
+                        }
+                    ]
+                }
+            )
         if path.endswith("/deployment-branch-policies"):
             return json.dumps({"branch_policies": self.policies})
         raise AssertionError(f"unexpected gh call: {args}")
@@ -169,21 +190,27 @@ def test_apply_sends_exactly_what_the_workflows_report(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _workflows(tmp_path, quality=QUALITY, extra=NAMED)
-    github = FakeGitHub(protected=["lint", "gone-with-the-old-workflow"])
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "gone-with-the-old-workflow"],
+    )
     monkeypatch.setattr(protect, "_gh", github)
     done = protect.apply(tmp_path)
 
-    [(method, body)] = github.written("repos/acme/kettle/branches/main/protection")
+    [(method, body)] = github.written("repos/acme/kettle/rulesets/7")
     assert method == "PUT"
     assert isinstance(body, dict)
-    checks = body["required_status_checks"]
-    assert isinstance(checks, dict)
+    rules = {rule["type"]: rule for rule in body["rules"]}
+    checks = rules["required_status_checks"]["parameters"]
     # Sorted by file name, so extra.yml comes before quality.yml.
-    assert checks["contexts"] == ["protocol-package", "lint", "test"]
+    assert checks["required_status_checks"] == [
+        {"context": "protocol-package"},
+        {"context": "lint"},
+        {"context": "test"},
+    ]
     # A branch must catch up with the base, or a green check says nothing
     # about what will be on the default branch.
-    assert checks["strict"] is True
-    assert body["required_pull_request_reviews"] is None
+    assert checks["strict_required_status_checks_policy"] is True
     assert done.dropped == ("gone-with-the-old-workflow",)
     assert done.added == ("protocol-package", "test")
 
@@ -235,6 +262,39 @@ def test_apply_updates_a_ruleset_that_is_there(
     assert method == "PUT"
     assert done.ruleset == "updated"
     assert github.written("repos/acme/kettle/rulesets") == []
+
+
+def test_apply_takes_away_a_branch_protection_that_duplicates_the_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two sources for one answer is one source too many.
+
+    A repository carrying both lists every check twice in the merge box, and
+    the two can drift until which set has to pass depends on the page you
+    open.
+    """
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(protected=["lint", "test"])
+    monkeypatch.setattr(protect, "_gh", github)
+    done = protect.apply(tmp_path)
+
+    [(method, _)] = github.written("repos/acme/kettle/branches/main/protection")
+    assert method == "DELETE"
+    assert done.legacy_removed is True
+
+
+def test_apply_writes_no_branch_protection_of_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ruleset is the only place the names are written."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub()
+    monkeypatch.setattr(protect, "_gh", github)
+    done = protect.apply(tmp_path)
+
+    written = github.written("repos/acme/kettle/branches/main/protection")
+    assert [method for method, _ in written] == []
+    assert done.legacy_removed is False
 
 
 def test_apply_lets_release_please_open_pull_requests(

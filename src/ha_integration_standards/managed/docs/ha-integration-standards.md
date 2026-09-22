@@ -187,14 +187,21 @@ not as a later to-do, and not after the release has already failed. A release
 that failed to publish is fixed by re-running its workflow once the publisher
 is registered.
 
-## The branch protection names the checks
+## The ruleset names the checks
 
 A required status check is a **name**, not a reference to a workflow. Rename a
 job, split a workflow, or adopt this package and drop the one the repository
-started with, and the protection waits for a context nobody reports any more.
+started with, and the rule waits for a context nobody reports any more.
 GitHub shows that as *"Expected — Waiting for status to be reported"* with no
 job behind it, and nothing can be merged: the checks that do run are green and
 irrelevant, because they are not the ones named.
+
+**One source, and it is the ruleset.** GitHub has two ways to require a check,
+the older branch protection and the newer rulesets. A repository carrying both
+lists every check twice in the merge box, once per source, and the two can
+drift apart until "which checks must pass" depends on which settings page you
+open. A ruleset does everything the branch protection did here, so it is the
+only one written, and a leftover branch protection is removed.
 
 So the names are never written down twice:
 
@@ -214,9 +221,9 @@ creating the repository, straight after the first push of `main`, as much as
 `git init` does. The same run also sets up what every integration here needs
 around the checks:
 
-- a **ruleset** on the default branch: pull requests only, no force-push, no
-  deletion, the same checks. No approval is required and administrators may
-  bypass it — one maintainer has nobody to wait for;
+- the **ruleset** itself on the default branch: pull requests only, no
+  force-push, no deletion, and the checks above. No approval is required and
+  administrators may bypass it — one maintainer has nobody to wait for;
 - **workflow permissions** that let release-please open its release pull
   request, which GitHub otherwise refuses;
 - where `lib/` builds a package, the **`pypi` environment** its publishing job
