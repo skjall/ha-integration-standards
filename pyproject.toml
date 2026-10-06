@@ -32,11 +32,11 @@ ha-tests = "ha_integration_standards.runner:tests"
 ha-types = "ha_integration_standards.runner:types"
 
 [tool.hatch.build.targets.wheel]
+# managed/ and scaffold/ live inside the package, so packages picks them up on
+# its own. A force-include for them adds every file a second time and the
+# wheel build refuses it - which only shows up on a real install, never on the
+# editable one used while developing here.
 packages = ["src/ha_integration_standards"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/ha_integration_standards/managed" = "ha_integration_standards/managed"
-"src/ha_integration_standards/scaffold" = "ha_integration_standards/scaffold"
 
 [tool.ruff]
 target-version = "py312"
