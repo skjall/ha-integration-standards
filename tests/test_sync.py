@@ -137,3 +137,29 @@ def test_the_requirements_reader_includes_the_integrations_own(project: Path) ->
     # Home Assistant is not installed here, so the component part exits 1 -
     # but the integration's own requirement is printed before that.
     assert "acme-protocol==1.2.3" in result.stdout
+
+
+def test_mypy_stays_strict_but_not_about_home_assistants_re_exports(
+    project: Path,
+) -> None:
+    """2026.10 reaches BinarySensorDeviceClass through a bare re-export.
+
+    strict turns on --no-implicit-reexport, which then fails the import core
+    itself uses. The rule is relaxed for homeassistant and nothing else.
+    """
+    main(["sync", str(project)])
+    config = (project / "mypy.ini").read_text()
+
+    assert "strict = True" in config
+    assert "[mypy-homeassistant.*]\nimplicit_reexport = True" in config
+
+    workflow = (project / ".github" / "workflows" / "quality.yml").read_text()
+    assert "mypy --config-file mypy.ini" in workflow
+    assert "mypy --strict" not in workflow
+
+
+def test_the_type_gate_reads_the_managed_config(project: Path) -> None:
+    """A gate running mypy with its own flags would ignore mypy.ini."""
+    main(["sync", str(project)])
+    gate = (project / "scripts" / "_ha_standards" / "runner.py").read_text()
+    assert "--config-file mypy.ini" in gate

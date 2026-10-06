@@ -24,6 +24,7 @@ from .discovery import Integration
 MANAGED: dict[str, str] = {
     "docs/ha-integration-standards.md": "docs/ha-integration-standards.md",
     "Dockerfile.test": "Dockerfile.test",
+    "mypy.ini": "mypy.ini",
     "scripts/ha_test_requirements.py": "scripts/ha_test_requirements.py",
     ".github/workflows/quality.yml": ".github/workflows/quality.yml",
 }
