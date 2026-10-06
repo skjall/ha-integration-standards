@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/skjall/ha-integration-standards/compare/v0.3.1...v0.4.0) (2026-10-06)
+
+
+### Features
+
+* **types:** manage mypy.ini, and stop pointing strict at core's re-exports ([1308a09](https://github.com/skjall/ha-integration-standards/commit/1308a095c9fdacae37684c3d463d9c9d7db4e864))
+* **types:** manage mypy.ini, and stop pointing strict at core's re-exports ([ea9a843](https://github.com/skjall/ha-integration-standards/commit/ea9a84386064fa1bc1eac3ff64856a011397e990))
+
 ## [0.3.1](https://github.com/skjall/ha-integration-standards/compare/v0.3.0...v0.3.1) (2026-09-22)
 
 
