@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.1](https://github.com/skjall/ha-integration-standards/compare/v0.4.0...v0.4.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* an installable wheel, and a test image that is not two weeks old ([a994fbd](https://github.com/skjall/ha-integration-standards/commit/a994fbd60a1dcd3a314073b73eb1fbb025ae0468))
+* **packaging:** build a wheel that can actually be installed ([745ca63](https://github.com/skjall/ha-integration-standards/commit/745ca63e02605bd2975019915f09af2e12f65216))
+* **tests:** rebuild the test image once it is a week old ([9a0d3e9](https://github.com/skjall/ha-integration-standards/commit/9a0d3e9dd9af22eb5ee89120b5a664da15102202))
+
 ## [0.4.0](https://github.com/skjall/ha-integration-standards/compare/v0.3.1...v0.4.0) (2026-10-06)
 
 
