@@ -141,7 +141,8 @@ def types(argv: list[str] | None = None) -> int:
             "sh",
             "-ec",
             "pip install -q --root-user-action=ignore mypy; "
-            f"mypy --strict --ignore-missing-imports --cache-dir=/tmp/mypy {target}",
+            "mypy --config-file mypy.ini "
+            f"--cache-dir=/tmp/mypy {target}",
         ],
         network=True,
         as_user=False,
