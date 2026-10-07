@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/skjall/ha-integration-standards/compare/v0.4.1...v0.5.0) (2026-10-07)
+
+
+### Features
+
+* **release:** keep a raised Home Assistant floor out of a major version ([dbbd940](https://github.com/skjall/ha-integration-standards/commit/dbbd940a7116918da64193c5fd322bc8e20806a0))
+* **release:** keep a raised Home Assistant floor out of a major version ([2742c94](https://github.com/skjall/ha-integration-standards/commit/2742c9453fdd395803adb548bcdffc9588fa9104))
+
 ## [0.4.1](https://github.com/skjall/ha-integration-standards/compare/v0.4.0...v0.4.1) (2026-10-06)
 
 
