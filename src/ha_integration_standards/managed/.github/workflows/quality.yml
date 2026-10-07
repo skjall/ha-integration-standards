@@ -40,6 +40,8 @@ jobs:
       - run: python3 scripts/_ha_standards/run.py verify
       # The tier is only worth something if the code still holds it.
       - run: python3 scripts/_ha_standards/run.py quality-scale
+      # A BREAKING CHANGE footer must not be able to claim 1.0.0 by itself.
+      - run: python3 scripts/_ha_standards/run.py release-config
 
   types:
     runs-on: ubuntu-latest

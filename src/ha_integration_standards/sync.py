@@ -53,6 +53,13 @@ PRECOMMIT_BLOCK = """  - repo: local
         pass_filenames: false
         always_run: true
 
+      - id: ha-release-config
+        name: Release config - the next version can only be the honest one
+        entry: python3 {vendor}/run.py release-config
+        language: system
+        pass_filenames: false
+        always_run: true
+
       - id: ha-types
         name: Types - mypy --strict against the targeted Home Assistant
         entry: python3 {vendor}/run.py types

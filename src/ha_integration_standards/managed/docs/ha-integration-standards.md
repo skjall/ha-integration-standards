@@ -226,6 +226,42 @@ the per-module floors a single number hides — a config flow at 88% still passe
 Conventional Commits → release-please opens a release PR → merging it tags,
 writes `CHANGELOG.md` and raises the version in `manifest.json`.
 
+### What counts as breaking
+
+SemVer puts MAJOR on *"incompatible API changes"*, and the specification is
+explicit that the API is the one the project declares. Here that is:
+
+- the entities, their ids, their attributes and their units;
+- the services, their fields and the options on the config entry;
+- for a package under `lib/`, the API it exports.
+
+A change is breaking when somebody using one of those, as documented, has to
+change something on their side for it to keep working.
+
+**A raised Home Assistant floor is not that.** It is a requirement of the
+platform underneath, which the specification says nothing about. It does lock
+out users on an older release - they stop being offered the update - and it
+belongs in the changelog as a `BREAKING CHANGE:` footer so they can read why.
+It does not earn a major version.
+
+release-please cannot tell the difference: below 1.0.0 that footer takes it
+straight to 1.0.0, which claims a stability nobody declared. So
+`release-please-config.json` carries
+
+```json
+"bump-minor-pre-major": true
+```
+
+which keeps a breaking change inside `0.x`, and the `release-config` gate
+fails the commit when it is missing. The changelog still gets its
+`⚠ BREAKING CHANGES` section; only the number stays honest.
+
+**Declaring 1.0 is a decision, and it is made by removing that line.** Above
+1.0.0 the option does nothing, so the same gate then fails until it is gone -
+a dead switch reads like a live promise. Taking it out is the moment the
+project says the API above is stable and that a break will cost a major
+version. Nothing else should move it there.
+
 Two traps:
 
 - **A tag created by release-please starts no workflow.** Tags pushed with the
@@ -363,7 +399,7 @@ Applies to an integration that talks BLE; ignore it otherwise.
 ## Before a commit
 
 `pre-commit` runs ruff, `mypy --strict`, the full suite in Docker, the quality
-gate and the coverage gate. Install it once:
+gate, the coverage gate and the release-config gate. Install it once:
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install pre-commit && .venv/bin/pre-commit install
