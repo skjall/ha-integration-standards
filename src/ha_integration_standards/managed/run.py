@@ -15,13 +15,19 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from _ha_standards import __version__  # noqa: E402
-from _ha_standards.checks import commit_message, coverage, quality_scale  # noqa: E402
+from _ha_standards.checks import (  # noqa: E402
+    commit_message,
+    coverage,
+    quality_scale,
+    release_config,
+)
 
 USAGE = """usage: run.py <gate> [arguments]
 
   quality-scale    the code holds what quality_scale.yaml claims
   coverage         the per-module coverage floors the claimed tier requires
   commit-message   Conventional Commits, in English
+  release-config   the next version can only be the honest one
   tests            the suite, in Docker, against the targeted Home Assistant
   types            mypy --strict, in the same container
   verify           the vendored files are the ones that were synced
@@ -73,6 +79,8 @@ def main(argv: list[str]) -> int:
         return coverage.main(rest)
     if gate == "commit-message":
         return commit_message.main(rest)
+    if gate == "release-config":
+        return release_config.main(rest)
     if gate == "verify":
         return _verify()
     if gate == "version":

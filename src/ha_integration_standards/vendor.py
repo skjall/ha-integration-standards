@@ -35,6 +35,7 @@ MODULES = (
     "checks/commit_message.py",
     "checks/coverage.py",
     "checks/quality_scale.py",
+    "checks/release_config.py",
 )
 
 HEADER = (
