@@ -323,14 +323,20 @@ whenever a job is added or renamed.
 **A new repository is unprotected until this runs.** Nothing else sets the
 protection up, and the repository gives no sign of it: `main` accepts a direct
 push, a force-push, a deletion. So `ha-standards protect` belongs to creating
-the repository as much as `git init` does - after `gh repo create` and before
-the first `git push`, so nothing reaches `main` unprotected:
+the repository as much as `git init` does - straight after the first push,
+and from then on every change reaches `main` through a pull request:
 
 ```bash
-gh repo create owner/name --public --source .   # no --push
-ha-standards protect
-git push -u origin main
+gh repo create owner/name --public --source . --push   # creates main
+ha-standards protect                                   # straight away
 ```
+
+**Why after the first push and not before it:** that push is the one that
+creates `main`. Whether GitHub lets a push create a branch that a ruleset
+already reserves for pull requests is not documented, and the order of a new
+repository must not hang on undocumented behaviour. The push gate covers the
+gap: it lets a push through while the default branch does not exist on
+GitHub yet, and refuses every push after it until `protect` has run.
 
 The same run also sets up what every integration here needs around the
 checks:
@@ -370,9 +376,10 @@ cannot see a setting cannot have broken it.
 audit on every `git push` (`run.py settings`, installed as a `pre-push`
 hook) and refuses the push while the default branch can be changed other
 than through a pull request: no ruleset, a ruleset that is not enforced, a
-rule missing, or a bypass that is always on. The fix it names is `ha-standards protect`. A check that merely
-drifted does not stop a push - that is `check`'s to report - and where GitHub
-cannot be asked, the push goes through.
+rule missing, or a bypass that is always on. The fix it names is
+`ha-standards protect`. A check that merely drifted does not stop a push -
+that is `check`'s to report. Where GitHub cannot be asked, or the default
+branch does not exist there yet, the push goes through.
 
 Each step reads what is there and writes what is wanted, so running it again
 is always safe.

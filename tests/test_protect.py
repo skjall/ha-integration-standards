@@ -150,7 +150,9 @@ class FakeGitHub:
         bypass_actors: list[dict[str, object]] | None = None,
         enforcement: str = "active",
         can_push: bool = True,
+        pushed: bool = True,
     ) -> None:
+        self.pushed = pushed
         self.protected = protected
         self.rulesets = rulesets or []
         self.policies = policies or []
@@ -188,6 +190,10 @@ class FakeGitHub:
                     "permissions": {"admin": self.can_push, "push": self.can_push},
                 }
             )
+        if path == "repos/acme/kettle/branches/main":
+            if not self.pushed:
+                raise protect.NoGhError("Branch not found (HTTP 404)")
+            return ""
         if path.endswith("/protection"):
             if self.protected is None:
                 raise protect.NoGhError("Branch not protected (HTTP 404)")
@@ -841,3 +847,61 @@ def test_the_settings_gate_passes_a_branch_that_takes_pull_requests_only(
 
     assert settings.main([str(tmp_path)]) == 0
     assert "pull requests only" in capsys.readouterr().out
+
+
+def test_the_settings_gate_lets_the_push_through_that_creates_the_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first push into a new repository; protect follows straight after.
+
+    Whether GitHub would let a push create a branch a ruleset already
+    reserves for pull requests is not documented, so the order does not
+    depend on it.
+    """
+    _workflows(tmp_path, quality=QUALITY)
+    monkeypatch.setattr(settings, "_gh", FakeGitHub(pushed=False))
+
+    assert settings.main([str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    assert "main does not exist on GitHub yet" in out
+    assert "ha-standards protect" in out
+
+
+def test_the_settings_gate_refuses_the_second_push_into_an_unprotected_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Once the first push has created main, protect is no longer optional."""
+    _workflows(tmp_path, quality=QUALITY)
+    monkeypatch.setattr(settings, "_gh", FakeGitHub(pushed=True))
+
+    assert settings.main([str(tmp_path)]) == 1
+    assert "no ruleset on main" in capsys.readouterr().out
+
+
+def test_the_settings_gate_does_not_take_a_failed_answer_for_a_missing_branch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Only a 404 means missing; anything else is not knowing."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub()
+
+    def flaky(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
+        if args[1:2] == ("repos/acme/kettle/branches/main",):
+            raise protect.NoGhError("error connecting to api.github.com")
+        return github(*args, stdin=stdin, cwd=cwd)
+
+    monkeypatch.setattr(settings, "_gh", flaky)
+
+    assert settings.main([str(tmp_path)]) == 0
+    assert "GitHub could not be asked" in capsys.readouterr().out
+
+
+def test_check_still_reports_a_repository_nothing_has_been_pushed_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gate lets the first push through; check still says what is open."""
+    _workflows(tmp_path, quality=QUALITY)
+    monkeypatch.setattr(settings, "_gh", FakeGitHub(pushed=False))
+
+    [problem] = protect.audit(tmp_path) or ()
+    assert "no ruleset on main" in problem

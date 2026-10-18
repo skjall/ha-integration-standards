@@ -33,6 +33,7 @@ import json
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -277,7 +278,32 @@ def _exposure(branch: str, detail: dict[str, Any] | None) -> list[str]:
     return loopholes(detail, branch)
 
 
-def direct_push(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
+def branch_exists(repo: str, branch: str) -> bool:
+    """Ask GitHub whether the branch is there; raise NoGhError if it cannot say.
+
+    Only a 404 means the branch is missing. Any other refusal - no network,
+    no login - is not knowing, and is passed on as such.
+    """
+    try:
+        _gh("api", f"repos/{repo}/branches/{branch}", "--silent")
+    except NoGhError as err:
+        if "404" in str(err):
+            return False
+        raise
+    return True
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """What the push gate found: how the branch is open, if it exists yet."""
+
+    branch: str
+    problems: tuple[str, ...] = ()
+    # False while the first push has not created the default branch yet.
+    exists: bool = True
+
+
+def direct_push(root: Path, repo: str | None = None) -> Verdict | None:
     """Return how the default branch can be pushed to past a pull request.
 
     The part of the audit the push gate holds a push to. A check that drifted
@@ -285,17 +311,32 @@ def direct_push(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
     branch open, and refusing a push over it would block the very branch
     that adds the job the ruleset does not know yet.
 
-    Empty when the branch takes pull requests only; None as for audit().
+    A default branch that does not exist on GitHub yet has nothing on it to
+    protect: that is the first push, the one that creates it, and it goes
+    through. Whether GitHub itself would let a push create a branch that a
+    ruleset already demands pull requests for is not documented, so the
+    order of a new repository does not depend on it - the first push comes
+    before `protect`, and every push after it is held to the ruleset.
+
+    None as for audit().
     """
     if not contexts(root):
         # protect refuses a repository whose workflows report nothing, so a
         # verdict here could not be acted on.
-        return ()
+        return Verdict(branch="")
     found = _inspect(root, repo)
     if found is None:
         return None
-    _, branch, detail = found
-    return tuple(_exposure(branch, detail))
+    name, branch, detail = found
+    problems = tuple(_exposure(branch, detail))
+    if not problems:
+        return Verdict(branch=branch)
+    try:
+        if not branch_exists(name, branch):
+            return Verdict(branch=branch, exists=False)
+    except NoGhError:
+        return None
+    return Verdict(branch=branch, problems=problems)
 
 
 def audit(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
@@ -357,13 +398,20 @@ def main(argv: list[str] | None = None) -> int:
     """Fail when the default branch on GitHub can be pushed to directly."""
     argv = list(sys.argv[1:] if argv is None else argv)
     start = Path(argv[0]) if argv else Path.cwd()
-    problems = direct_push(_repository_root(start.resolve()))
-    if problems is None:
+    verdict = direct_push(_repository_root(start.resolve()))
+    if verdict is None:
         print("Repository settings: not checked, GitHub could not be asked.")
         return 0
-    if problems:
+    if not verdict.exists:
+        print(
+            f"Repository settings: {verdict.branch} does not exist on GitHub yet, "
+            "so this push creates it.\nRun 'ha-standards protect' straight "
+            "after it - every later push is refused until then."
+        )
+        return 0
+    if verdict.problems:
         print("Repository settings: the default branch takes a direct push\n")
-        for problem in problems:
+        for problem in verdict.problems:
             print(f"  FAIL  {problem}")
         print(
             "\nNothing is pushed until this is fixed. Run 'ha-standards protect'\n"

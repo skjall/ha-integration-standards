@@ -240,20 +240,25 @@ def test_the_settings_gate_travels_with_the_project(project: Path) -> None:
     assert "GitHub could not be asked" in result.stdout
 
 
-def test_a_new_integration_is_protected_before_its_first_push(
+def test_a_new_integration_is_protected_straight_after_its_first_push(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Create on GitHub without pushing, protect, and only then push."""
+    """The first push creates main, and protect follows straight after it."""
     target = tmp_path / "acme"
     assert (
         main(["new", str(target), "--domain", "acme_kettle", "--owner", "example"]) == 0
     )
     out = capsys.readouterr().out
-    create = "gh repo create example/home-assistant-acme-kettle --public --source ."
+    first_commit = 'git commit -m "feat: start the integration"'
+    create = (
+        "gh repo create example/home-assistant-acme-kettle --public --source . --push"
+    )
+    assert first_commit in out
     assert create in out
-    assert "--push" not in out
+    assert out.index(first_commit) < out.index(create)
     assert out.index(create) < out.index("ha-standards protect")
-    assert out.index("ha-standards protect") < out.index("git push -u origin main")
+    assert "through a pull request" in out
+    assert "git push" not in out
 
     config = yaml.safe_load((target / ".pre-commit-config.yaml").read_text())
     assert "pre-push" in config["default_install_hook_types"]
