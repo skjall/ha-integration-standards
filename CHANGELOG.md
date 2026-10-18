@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.5.0](https://github.com/skjall/ha-integration-standards/compare/v0.4.1...v0.5.0) (2026-10-18)
+
+
+### Features
+
+* **release:** keep a raised Home Assistant floor out of a major version ([dbbd940](https://github.com/skjall/ha-integration-standards/commit/dbbd940a7116918da64193c5fd322bc8e20806a0))
+* **release:** keep a raised Home Assistant floor out of a major version ([2742c94](https://github.com/skjall/ha-integration-standards/commit/2742c9453fdd395803adb548bcdffc9588fa9104))
+* **settings:** refuse a push while the default branch takes a direct push ([27e0c8c](https://github.com/skjall/ha-integration-standards/commit/27e0c8c7b83fe2fcbc37137299d5335a38908251))
+
+
+### Bug Fixes
+
+* let nobody push to the default branch directly, administrators included ([a43d2b1](https://github.com/skjall/ha-integration-standards/commit/a43d2b1c6cd7bf9ea11b8a2d2ab05a07d5b3046d))
+* **protect:** let administrators bypass the ruleset for pull requests only ([31a2c89](https://github.com/skjall/ha-integration-standards/commit/31a2c89a5d87a0451458927500447b56921c64e9))
+* **protect:** report every way past the ruleset to the default branch ([a32f435](https://github.com/skjall/ha-integration-standards/commit/a32f4358513cc235fafac5a42ce693b4683c8316))
+* **settings:** let the push that creates the default branch through ([ee254be](https://github.com/skjall/ha-integration-standards/commit/ee254be10e1a875072f99047f7e00805688a5076))
+
 ## [0.4.1](https://github.com/skjall/ha-integration-standards/compare/v0.4.0...v0.4.1) (2026-10-06)
 
 
