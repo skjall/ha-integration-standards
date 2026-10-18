@@ -349,11 +349,14 @@ that was never made or has drifted since is reported rather than waited for:
 ha-standards check              # managed files and repository settings
 ```
 
-It names a branch no ruleset covers, a check the ruleset requires that no
-workflow reports any more, a job that runs without anything requiring it, and
-a leftover branch protection duplicating the ruleset. Where GitHub cannot be
-asked - no `gh`, no credentials, a pull request from a fork - it says so and
-passes, because a contributor who cannot see a setting cannot have broken it.
+It names a branch no ruleset covers, a ruleset that is not enforced or lacks
+one of `pull_request`, `non_fast_forward` and `deletion`, a bypass that is not
+limited to pull requests, a check the ruleset requires that no workflow
+reports any more, a job that runs without anything requiring it, and a
+leftover branch protection duplicating the ruleset. Where GitHub cannot be
+asked - no `gh`, no credentials, no remote, a repository you cannot push to,
+a pull request from a fork - it says so and passes, because a contributor who
+cannot see a setting cannot have broken it.
 
 Each step reads what is there and writes what is wanted, so running it again
 is always safe.

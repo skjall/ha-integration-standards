@@ -68,7 +68,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         for reason in settings:
             print(f"  FAIL  {reason}")
     else:
-        print("Repository settings: the ruleset requires what the workflows report.")
+        print(
+            "Repository settings: pull requests only, and the ruleset requires "
+            "what the workflows report."
+        )
 
     return 1 if failed else 0
 

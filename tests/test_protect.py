@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from ha_integration_standards import protect
+from ha_integration_standards.checks import settings
 from ha_integration_standards.cli import main
 
 QUALITY = """
@@ -126,6 +127,16 @@ def test_apply_refuses_when_nothing_reports(tmp_path: Path) -> None:
         protect.apply(tmp_path)
 
 
+# What protect writes, and what a ruleset that leaves no way past a pull
+# request carries.
+GUARDS = ["deletion", "non_fast_forward", "pull_request"]
+PULL_REQUEST_BYPASS = {
+    "actor_id": 5,
+    "actor_type": "RepositoryRole",
+    "bypass_mode": "pull_request",
+}
+
+
 class FakeGitHub:
     """Answer the gh calls protect makes, and remember every write."""
 
@@ -135,18 +146,29 @@ class FakeGitHub:
         rulesets: list[dict[str, object]] | None = None,
         policies: list[dict[str, str]] | None = None,
         ruleset_contexts: list[str] | None = None,
+        rules: list[str] | None = None,
+        bypass_actors: list[dict[str, object]] | None = None,
+        enforcement: str = "active",
+        can_push: bool = True,
     ) -> None:
         self.protected = protected
         self.rulesets = rulesets or []
         self.policies = policies or []
         self.ruleset_contexts = ruleset_contexts or []
+        self.rules = GUARDS if rules is None else rules
+        self.bypass_actors = (
+            [PULL_REQUEST_BYPASS] if bypass_actors is None else bypass_actors
+        )
+        self.enforcement = enforcement
+        self.can_push = can_push
         self.writes: list[tuple[str, str, object]] = []
 
     def __call__(
         self, *args: str, stdin: str | None = None, cwd: Path | None = None
     ) -> str:
         if args[0] == "repo":
-            return "acme/kettle\n" if "nameWithOwner" in args else "main\n"
+            assert "nameWithOwner" in args, f"unexpected gh call: {args}"
+            return "acme/kettle\n"
         if args[1] == "--method":
             method, path = args[2], args[3]
             if method == "DELETE" and path.endswith("/protection"):
@@ -157,6 +179,15 @@ class FakeGitHub:
             self.writes.append((method, path, body))
             return ""
         path = args[1]
+        if path == "repos/acme/kettle":
+            # The REST answer, which names the default branch even before the
+            # first push has created it.
+            return json.dumps(
+                {
+                    "default_branch": "main",
+                    "permissions": {"admin": self.can_push, "push": self.can_push},
+                }
+            )
         if path.endswith("/protection"):
             if self.protected is None:
                 raise protect.NoGhError("Branch not protected (HTTP 404)")
@@ -166,7 +197,10 @@ class FakeGitHub:
         if "/rulesets/" in path:
             return json.dumps(
                 {
+                    "enforcement": self.enforcement,
+                    "bypass_actors": self.bypass_actors,
                     "rules": [
+                        *({"type": rule} for rule in self.rules),
                         {
                             "type": "required_status_checks",
                             "parameters": {
@@ -174,8 +208,8 @@ class FakeGitHub:
                                     {"context": c} for c in self.ruleset_contexts
                                 ]
                             },
-                        }
-                    ]
+                        },
+                    ],
                 }
             )
         if path.endswith("/deployment-branch-policies"):
@@ -194,7 +228,7 @@ def test_apply_sends_exactly_what_the_workflows_report(
         rulesets=[{"id": 7, "name": "main"}],
         ruleset_contexts=["lint", "gone-with-the-old-workflow"],
     )
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     done = protect.apply(tmp_path)
 
     [(method, body)] = github.written("repos/acme/kettle/rulesets/7")
@@ -221,7 +255,7 @@ def test_apply_creates_the_ruleset_a_new_repository_lacks(
     """Pull requests only, no force-push, no deletion, the same checks."""
     _workflows(tmp_path, quality=QUALITY)
     github = FakeGitHub()
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     done = protect.apply(tmp_path)
 
     [(method, body)] = github.written("repos/acme/kettle/rulesets")
@@ -258,7 +292,7 @@ def test_an_administrator_bypasses_for_pull_requests_only(
     """
     _workflows(tmp_path, quality=QUALITY)
     github = FakeGitHub()
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     protect.apply(tmp_path)
 
     [(_, body)] = github.written("repos/acme/kettle/rulesets")
@@ -275,7 +309,7 @@ def test_apply_updates_a_ruleset_that_is_there(
     github = FakeGitHub(
         protected=["lint"], rulesets=[{"id": 7, "name": "main"}, {"id": 9, "name": "x"}]
     )
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     done = protect.apply(tmp_path)
 
     [(method, _)] = github.written("repos/acme/kettle/rulesets/7")
@@ -295,7 +329,7 @@ def test_apply_takes_away_a_branch_protection_that_duplicates_the_checks(
     """
     _workflows(tmp_path, quality=QUALITY)
     github = FakeGitHub(protected=["lint", "test"])
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     done = protect.apply(tmp_path)
 
     [(method, _)] = github.written("repos/acme/kettle/branches/main/protection")
@@ -309,7 +343,7 @@ def test_apply_writes_no_branch_protection_of_its_own(
     """The ruleset is the only place the names are written."""
     _workflows(tmp_path, quality=QUALITY)
     github = FakeGitHub()
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     done = protect.apply(tmp_path)
 
     written = github.written("repos/acme/kettle/branches/main/protection")
@@ -322,7 +356,7 @@ def test_apply_lets_release_please_open_pull_requests(
 ) -> None:
     _workflows(tmp_path, quality=QUALITY)
     github = FakeGitHub()
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     protect.apply(tmp_path)
 
     [(method, args)] = github.written("repos/acme/kettle/actions/permissions/workflow")
@@ -337,7 +371,7 @@ def test_no_package_no_pypi_environment(
 ) -> None:
     _workflows(tmp_path, quality=QUALITY)
     github = FakeGitHub()
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     done = protect.apply(tmp_path)
 
     assert done.publishers == ()
@@ -351,7 +385,7 @@ def test_a_package_gets_its_pypi_environment(
     _workflows(tmp_path, quality=QUALITY)
     _package(tmp_path)
     github = FakeGitHub(policies=[{"name": "main", "type": "branch"}])
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
     monkeypatch.setattr(protect, "on_pypi", lambda name: True)
     done = protect.apply(tmp_path)
 
@@ -376,7 +410,7 @@ def test_the_publisher_names_what_pypi_org_asks_for(
     """The workflow by file name, which is what pypi.org matches on."""
     _workflows(tmp_path, quality=QUALITY, release=PUBLISH)
     _package(tmp_path)
-    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
     monkeypatch.setattr(protect, "on_pypi", lambda name: False)
     [publisher] = protect.apply(tmp_path).publishers
 
@@ -442,7 +476,7 @@ def test_protect_says_what_to_register_on_pypi(
 ) -> None:
     _workflows(project, quality=QUALITY, release=PUBLISH)
     _package(project)
-    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
     monkeypatch.setattr(protect, "on_pypi", lambda name: False)
 
     assert main(["protect", str(project)]) == 0
@@ -464,7 +498,7 @@ def test_protect_is_quiet_about_a_published_package(
 ) -> None:
     _workflows(project, quality=QUALITY, release=PUBLISH)
     _package(project)
-    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
     monkeypatch.setattr(protect, "on_pypi", lambda name: True)
 
     assert main(["protect", str(project)]) == 0
@@ -478,7 +512,7 @@ def test_protect_does_not_claim_what_pypi_did_not_say(
 ) -> None:
     _workflows(project, quality=QUALITY, release=PUBLISH)
     _package(project)
-    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
     monkeypatch.setattr(protect, "on_pypi", lambda name: None)
 
     assert main(["protect", str(project)]) == 0
@@ -491,7 +525,7 @@ def test_an_unprotected_branch_is_an_outcome_not_a_fault(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _workflows(tmp_path, quality=QUALITY)
-    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
     done = protect.apply(tmp_path)
 
     assert done.before is None
@@ -503,7 +537,7 @@ def test_protect_reports_what_it_did(
     project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _workflows(project, quality=QUALITY)
-    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
 
     assert main(["protect", str(project)]) == 0
     out = capsys.readouterr().out
@@ -519,7 +553,7 @@ def test_dry_run_prints_and_changes_nothing(
     def refuse(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
         raise AssertionError("--dry-run must not call gh")
 
-    monkeypatch.setattr(protect, "_gh", refuse)
+    monkeypatch.setattr(settings, "_gh", refuse)
 
     assert main(["protect", str(project), "--dry-run"]) == 0
     assert "lint" in capsys.readouterr().out
@@ -533,7 +567,7 @@ def test_a_missing_gh_is_reported_not_raised(
     def refuse(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
         raise protect.NoGhError("the GitHub CLI ('gh') is not installed")
 
-    monkeypatch.setattr(protect, "_gh", refuse)
+    monkeypatch.setattr(settings, "_gh", refuse)
 
     assert main(["protect", str(project)]) == 1
 
@@ -564,7 +598,7 @@ def test_audit_is_quiet_when_the_settings_are_right(
     github = FakeGitHub(
         rulesets=[{"id": 7, "name": "main"}], ruleset_contexts=["lint", "test"]
     )
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
 
     assert protect.audit(tmp_path) == ()
 
@@ -574,7 +608,7 @@ def test_audit_reports_a_branch_that_nothing_protects(
 ) -> None:
     """A new repository is wide open and nothing complains while it is."""
     _workflows(tmp_path, quality=QUALITY)
-    monkeypatch.setattr(protect, "_gh", FakeGitHub())
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
 
     [problem] = protect.audit(tmp_path)
     assert "no ruleset on main" in problem
@@ -589,7 +623,7 @@ def test_audit_reports_checks_that_drifted(
         rulesets=[{"id": 7, "name": "main"}],
         ruleset_contexts=["lint", "gone-with-the-old-workflow"],
     )
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
 
     problems = " ".join(protect.audit(tmp_path) or ())
     assert "test" in problems
@@ -606,7 +640,7 @@ def test_audit_reports_a_second_source_for_the_same_checks(
         rulesets=[{"id": 7, "name": "main"}],
         ruleset_contexts=["lint", "test"],
     )
-    monkeypatch.setattr(protect, "_gh", github)
+    monkeypatch.setattr(settings, "_gh", github)
 
     [problem] = protect.audit(tmp_path)
     assert "a branch protection requires checks a second time" in problem
@@ -621,6 +655,120 @@ def test_audit_says_nothing_when_github_cannot_be_asked(
     def refuse(*args: str, **kwargs: object) -> str:
         raise protect.NoGhError("the GitHub CLI ('gh') is not installed")
 
-    monkeypatch.setattr(protect, "_gh", refuse)
+    monkeypatch.setattr(settings, "_gh", refuse)
 
     assert protect.audit(tmp_path) is None
+
+
+def test_audit_reports_a_rule_the_ruleset_lacks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ruleset without non_fast_forward still lets main be rewritten."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "test"],
+        rules=["deletion", "pull_request"],
+    )
+    monkeypatch.setattr(settings, "_gh", github)
+
+    [problem] = protect.audit(tmp_path) or ()
+    assert "lacks non_fast_forward" in problem
+    assert "a force-push" in problem
+    assert "ha-standards protect" in problem
+
+
+def test_audit_names_every_rule_that_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "test"],
+        rules=[],
+    )
+    monkeypatch.setattr(settings, "_gh", github)
+
+    [problem] = protect.audit(tmp_path) or ()
+    assert "pull_request, non_fast_forward, deletion" in problem
+    assert "a direct push, a force-push and a deletion" in problem
+
+
+def test_audit_reports_an_administrator_who_may_always_bypass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ruleset every repository here carried until the twelve commits."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "test"],
+        bypass_actors=[
+            {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+        ],
+    )
+    monkeypatch.setattr(settings, "_gh", github)
+
+    [problem] = protect.audit(tmp_path) or ()
+    assert "the repository admin role may bypass the ruleset on main" in problem
+    assert "'always'" in problem
+    assert "someone can push to main directly" in problem
+    assert "ha-standards protect" in problem
+
+
+def test_audit_reports_every_bypass_that_is_not_for_pull_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "test"],
+        bypass_actors=[
+            PULL_REQUEST_BYPASS,
+            {"actor_id": 42, "actor_type": "Integration", "bypass_mode": "exempt"},
+        ],
+    )
+    monkeypatch.setattr(settings, "_gh", github)
+
+    [problem] = protect.audit(tmp_path) or ()
+    assert "Integration 42" in problem
+    assert "'exempt'" in problem
+
+
+def test_audit_reports_a_ruleset_that_enforces_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "test"],
+        enforcement="evaluate",
+    )
+    monkeypatch.setattr(settings, "_gh", github)
+
+    [problem] = protect.audit(tmp_path) or ()
+    assert "set to 'evaluate'" in problem
+    assert "someone can push to main directly" in problem
+
+
+def test_audit_leaves_a_repository_alone_the_caller_cannot_push_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A contributor's checkout of someone else's repository: not theirs to fix."""
+    _workflows(tmp_path, quality=QUALITY)
+    monkeypatch.setattr(settings, "_gh", FakeGitHub(can_push=False))
+
+    assert protect.audit(tmp_path) is None
+
+
+def test_the_default_branch_is_known_before_the_first_push(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty repository has no defaultBranchRef; REST names it anyway.
+
+    protect has to run between `gh repo create` and the first push, so it
+    must not depend on a branch that only that push creates.
+    """
+    github = FakeGitHub()
+    monkeypatch.setattr(settings, "_gh", github)
+
+    assert protect.default_branch("acme/kettle") == "main"
