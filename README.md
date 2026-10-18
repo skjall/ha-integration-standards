@@ -68,13 +68,19 @@ ha-standards new ~/Code/home-assistant-acme-kettle \
 A scaffold that already holds the tier: typed config entry, coordinator, base
 entity, a platform, diagnostics, translations, tests, CI, release automation.
 
-Once the repository exists on GitHub and `main` is pushed, protect it - a new
-repository has no protection at all until then:
+Once the repository exists on GitHub, protect it before anything is pushed -
+a new repository has no protection at all until then:
 
 ```bash
-gh repo create yourname/home-assistant-acme-kettle --public --source . --push
+gh repo create yourname/home-assistant-acme-kettle --public --source .
 ha-standards protect
+git push -u origin main
 ```
+
+Creating the repository without `--push` is what lets `protect` run first:
+`main` is protected before the first commit reaches it. The order is also
+enforced - the push gate refuses a push to a repository that is not
+protected yet, and names `ha-standards protect`.
 
 ## The gates
 
@@ -93,6 +99,7 @@ python3 scripts/_ha_standards/run.py --help
 | `commit-message` | Conventional Commits, written in English |
 | `types` | `mypy --strict`, against the targeted Home Assistant |
 | `tests` | the suite, in Docker, on the interpreter the release needs |
+| `settings` | GitHub takes no direct push to the default branch (on `git push`) |
 
 `ha-standards sync` also writes `.github/workflows/quality.yml`, which runs
 the same gates in CI using nothing but the checkout.
@@ -118,8 +125,14 @@ the `pypi` environment, limited to the default branch and `v*` tags. No
 approval is required. Administrators may bypass the ruleset for pull requests
 only: they can merge one past a check, but cannot push, force-push or delete
 the default branch directly - and neither can any automation running under
-their login. For a new integration it is the step after the first push of
-`main`.
+their login. For a new integration it is the step between `gh repo create`
+and the first push.
+
+Nobody has to remember it. The `ha-settings` hook runs on every `git push`
+and refuses the push while the default branch can be changed other than
+through a pull request - no ruleset, a ruleset that is not enforced, a rule
+missing, or a bypass that is always on. Where GitHub cannot be asked (no remote yet, no `gh`, no login, a
+repository you cannot push to) it passes.
 
 One step it cannot take: pypi.org has to be told to trust the publishing
 workflow, by the owner of the PyPI account. While the package is not on PyPI,

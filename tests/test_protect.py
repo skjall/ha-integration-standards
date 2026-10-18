@@ -772,3 +772,72 @@ def test_the_default_branch_is_known_before_the_first_push(
     monkeypatch.setattr(settings, "_gh", github)
 
     assert protect.default_branch("acme/kettle") == "main"
+
+
+def test_the_settings_gate_passes_where_github_cannot_be_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """No remote yet, no gh, no login: a push is not refused over that."""
+    _workflows(tmp_path, quality=QUALITY)
+
+    def refuse(*args: str, **kwargs: object) -> str:
+        raise protect.NoGhError("no git remotes found")
+
+    monkeypatch.setattr(settings, "_gh", refuse)
+
+    assert settings.main([str(tmp_path)]) == 0
+    assert "GitHub could not be asked" in capsys.readouterr().out
+
+
+def test_the_settings_gate_refuses_a_push_to_a_branch_nothing_protects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    monkeypatch.setattr(settings, "_gh", FakeGitHub())
+
+    assert settings.main([str(tmp_path)]) == 1
+    out = capsys.readouterr().out
+    assert "no ruleset on main" in out
+    assert "ha-standards protect" in out
+
+
+def test_the_settings_gate_refuses_a_push_an_administrator_could_make_directly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}],
+        ruleset_contexts=["lint", "test"],
+        bypass_actors=[
+            {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always"}
+        ],
+    )
+    monkeypatch.setattr(settings, "_gh", github)
+
+    assert settings.main([str(tmp_path)]) == 1
+    assert "push to main directly" in capsys.readouterr().out
+
+
+def test_the_settings_gate_does_not_refuse_a_push_over_a_drifted_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The branch that adds a job must be pushable before protect knows it."""
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(rulesets=[{"id": 7, "name": "main"}], ruleset_contexts=["lint"])
+    monkeypatch.setattr(settings, "_gh", github)
+
+    assert settings.main([str(tmp_path)]) == 0
+    assert protect.audit(tmp_path)
+
+
+def test_the_settings_gate_passes_a_branch_that_takes_pull_requests_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub(
+        rulesets=[{"id": 7, "name": "main"}], ruleset_contexts=["lint", "test"]
+    )
+    monkeypatch.setattr(settings, "_gh", github)
+
+    assert settings.main([str(tmp_path)]) == 0
+    assert "pull requests only" in capsys.readouterr().out

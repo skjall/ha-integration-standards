@@ -49,7 +49,9 @@ Every step reads what is there and writes what is wanted, so running it again
 changes nothing that is already right.
 
 Reading what is there is shared with the gates: `checks/settings.py` holds
-the audit, where a vendored copy can run it with nothing installed.
+the audit, and the vendored copy of it refuses a push while the default
+branch can be pushed to directly. That is what makes this run happen for
+every repository rather than for the ones somebody remembered.
 """
 
 from __future__ import annotations
@@ -65,8 +67,8 @@ import yaml
 
 from .checks import settings
 
-# The reading half lives with the gates, so a vendored copy can run the
-# audit with nothing installed. These names stay importable
+# The reading half lives with the gates, so the vendored copy can run the
+# audit on every push with nothing installed. These names stay importable
 # from here for everything that used them before.
 from .checks.settings import (
     WORKFLOWS,

@@ -1,23 +1,30 @@
-"""Read the repository's settings on GitHub, and say what is wrong with them.
+"""Refuse a push while the default branch on GitHub accepts a direct push.
 
 A repository is created bare. Until `ha-standards protect` has run, its
 default branch takes a direct push, a force-push and a deletion from anyone
 with write access, and nothing says so: the merge box only appears once a
-pull request is opened, and a push straight to the branch opens none. A
-ruleset that exists is not the end of it either. One that is not enforced,
-that lacks a rule, or that lets an administrator bypass it always, still
-lets the maintainer's own login - and every automation using it - push past
-every check.
+pull request is opened, and a push straight to the branch opens none. So an
+automation pushing under the maintainer's own login can put a dozen commits
+on the default branch of a public repository, without a single check having
+run, and the first sign of it is the history.
 
-The audit lives here rather than in protect.py so that a vendored copy can
-run it with nothing installed but PyYAML and the GitHub CLI. protect.py
+`ha-standards check` already audited the settings, but only when somebody
+ran it. This gate runs the same audit on every `git push`, from the vendored
+copy, and holds the push to the part of it that matters there: a project
+that was never protected - or protected loosely enough that an administrator
+can still push past the ruleset - cannot push at all until `ha-standards
+protect` has been run. Then the fix is one command, and the push that was
+refused goes through. A check that merely drifted is left to `check`.
+
+The audit lives here rather than in protect.py because the vendored copy has
+to run it with nothing installed but PyYAML and the GitHub CLI. protect.py
 imports it from here, so there is one audit, not two that drift apart.
 
 Not knowing is not the same as being wrong. Where GitHub cannot be asked -
-no remote yet, no `gh`, no login, a repository the caller has no write
-access to - the audit returns None. A contributor must not be told to fix
-settings they cannot change, and a fresh checkout without a remote has no
-settings to fix.
+no remote yet, no `gh`, no login, a repository the pusher has no write
+access to - the audit returns None and the gate lets the push through. A
+contributor pushing to a fork must not be told to fix settings they cannot
+change, and a fresh checkout without a remote has no settings to fix.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -269,6 +277,27 @@ def _exposure(branch: str, detail: dict[str, Any] | None) -> list[str]:
     return loopholes(detail, branch)
 
 
+def direct_push(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
+    """Return how the default branch can be pushed to past a pull request.
+
+    The part of the audit the push gate holds a push to. A check that drifted
+    or a branch protection left over makes the merge box wrong, not the
+    branch open, and refusing a push over it would block the very branch
+    that adds the job the ruleset does not know yet.
+
+    Empty when the branch takes pull requests only; None as for audit().
+    """
+    if not contexts(root):
+        # protect refuses a repository whose workflows report nothing, so a
+        # verdict here could not be acted on.
+        return ()
+    found = _inspect(root, repo)
+    if found is None:
+        return None
+    _, branch, detail = found
+    return tuple(_exposure(branch, detail))
+
+
 def audit(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
     """Return what is wrong with the repository's settings, if anything.
 
@@ -314,3 +343,36 @@ def audit(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
             "apart. Run 'ha-standards protect'."
         )
     return tuple(problems)
+
+
+def _repository_root(start: Path) -> Path:
+    """Return the checkout the gate runs for; pre-commit starts at its root."""
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return start
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Fail when the default branch on GitHub can be pushed to directly."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    start = Path(argv[0]) if argv else Path.cwd()
+    problems = direct_push(_repository_root(start.resolve()))
+    if problems is None:
+        print("Repository settings: not checked, GitHub could not be asked.")
+        return 0
+    if problems:
+        print("Repository settings: the default branch takes a direct push\n")
+        for problem in problems:
+            print(f"  FAIL  {problem}")
+        print(
+            "\nNothing is pushed until this is fixed. Run 'ha-standards protect'\n"
+            "(it needs admin rights on the repository), then push again."
+        )
+        return 1
+    print("Repository settings: the default branch takes pull requests only.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

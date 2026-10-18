@@ -323,8 +323,16 @@ whenever a job is added or renamed.
 **A new repository is unprotected until this runs.** Nothing else sets the
 protection up, and the repository gives no sign of it: `main` accepts a direct
 push, a force-push, a deletion. So `ha-standards protect` belongs to creating
-the repository, straight after the first push of `main`, as much as `git init`
-does. The same run also sets up what every integration here needs around the
+the repository as much as `git init` does - after `gh repo create` and before
+the first `git push`, so nothing reaches `main` unprotected:
+
+```bash
+gh repo create owner/name --public --source .   # no --push
+ha-standards protect
+git push -u origin main
+```
+
+The same run also sets up what every integration here needs around the
 checks:
 
 - the **ruleset** itself on the default branch: pull requests only, no
@@ -357,6 +365,14 @@ leftover branch protection duplicating the ruleset. Where GitHub cannot be
 asked - no `gh`, no credentials, no remote, a repository you cannot push to,
 a pull request from a fork - it says so and passes, because a contributor who
 cannot see a setting cannot have broken it.
+
+**`protect` is not left to memory.** The `ha-settings` hook runs the same
+audit on every `git push` (`run.py settings`, installed as a `pre-push`
+hook) and refuses the push while the default branch can be changed other
+than through a pull request: no ruleset, a ruleset that is not enforced, a
+rule missing, or a bypass that is always on. The fix it names is `ha-standards protect`. A check that merely
+drifted does not stop a push - that is `check`'s to report - and where GitHub
+cannot be asked, the push goes through.
 
 Each step reads what is there and writes what is wanted, so running it again
 is always safe.
