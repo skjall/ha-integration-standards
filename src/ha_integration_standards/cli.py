@@ -113,7 +113,9 @@ def cmd_protect(args: argparse.Namespace) -> int:
     if done.before is None:
         print("\nThe branch was unprotected until now.")
     print(f"\nRuleset '{done.branch}' {done.ruleset}: pull requests only,")
-    print("  no force-push, no deletion, the same checks.")
+    print("  no force-push, no deletion, the same checks. Administrators may")
+    print("  merge a pull request past a check, but cannot push, force-push")
+    print(f"  or delete {done.branch} directly.")
     if done.legacy_removed:
         print("Branch protection removed: it required the same checks a second")
         print("  time, which GitHub lists twice and lets drift apart.")

@@ -28,8 +28,12 @@ every integration of this family needs:
 - a ruleset on the default branch: changes arrive through a pull request, the
   branch cannot be force-pushed or deleted, and the same checks must pass,
   with a branch made to catch up with the base first. No approval is
-  required, and administrators may bypass it - one maintainer has nobody to
-  wait for;
+  required - one maintainer has nobody to wait for. Administrators may
+  bypass it for pull requests only: they can merge one past a check, but
+  cannot push, force-push or delete the default branch directly. A bypass
+  that is always on is no protection at all against an administrator's own
+  login, and that is the login every automation on the maintainer's machine
+  pushes with - it once put twelve commits straight onto a public `main`;
 - workflow permissions that let release-please open its release pull request;
 - where lib/ builds a package, the 'pypi' environment its publishing job runs
   in, limited to the default branch and to release tags.
@@ -341,7 +345,10 @@ def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
             {
                 "actor_id": _ADMIN_ROLE,
                 "actor_type": "RepositoryRole",
-                "bypass_mode": "always",
+                # Past a failing check through a pull request, never around
+                # one: an administrator's login is also the one every
+                # automation on the maintainer's machine pushes with.
+                "bypass_mode": "pull_request",
             }
         ],
         "rules": [

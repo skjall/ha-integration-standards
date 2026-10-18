@@ -328,8 +328,12 @@ does. The same run also sets up what every integration here needs around the
 checks:
 
 - the **ruleset** itself on the default branch: pull requests only, no
-  force-push, no deletion, and the checks above. No approval is required and
-  administrators may bypass it — one maintainer has nobody to wait for;
+  force-push, no deletion, and the checks above. No approval is required —
+  one maintainer has nobody to wait for. Administrators may bypass it **for
+  pull requests only**: they can merge a pull request past a check, but
+  cannot push, force-push or delete the default branch directly. That
+  includes every automation running under the maintainer's own login, which
+  is exactly what an administrator's bypass would otherwise let through;
 - **workflow permissions** that let release-please open its release pull
   request, which GitHub otherwise refuses;
 - where `lib/` builds a package, the **`pypi` environment** its publishing job

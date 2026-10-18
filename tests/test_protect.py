@@ -248,6 +248,26 @@ def test_apply_creates_the_ruleset_a_new_repository_lacks(
     assert body["bypass_actors"][0]["actor_type"] == "RepositoryRole"
 
 
+def test_an_administrator_bypasses_for_pull_requests_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Past a failing check through a pull request, never around one.
+
+    'always' let the maintainer's own login - and with it every automation
+    on their machine - push twelve commits straight onto a public main.
+    """
+    _workflows(tmp_path, quality=QUALITY)
+    github = FakeGitHub()
+    monkeypatch.setattr(protect, "_gh", github)
+    protect.apply(tmp_path)
+
+    [(_, body)] = github.written("repos/acme/kettle/rulesets")
+    assert isinstance(body, dict)
+    assert body["bypass_actors"] == [
+        {"actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "pull_request"}
+    ]
+
+
 def test_apply_updates_a_ruleset_that_is_there(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

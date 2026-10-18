@@ -114,8 +114,12 @@ The same run holds the rest of the protection a new repository lacks until
 someone remembers: a ruleset on the default branch (pull requests only, no
 force-push, no deletion, the same checks), workflow permissions that let
 release-please open its pull request, and - where `lib/` builds a package -
-the `pypi` environment, limited to the default branch and `v*` tags. For a new
-integration it is the step after the first push of `main`.
+the `pypi` environment, limited to the default branch and `v*` tags. No
+approval is required. Administrators may bypass the ruleset for pull requests
+only: they can merge one past a check, but cannot push, force-push or delete
+the default branch directly - and neither can any automation running under
+their login. For a new integration it is the step after the first push of
+`main`.
 
 One step it cannot take: pypi.org has to be told to trust the publishing
 workflow, by the owner of the PyPI account. While the package is not on PyPI,
