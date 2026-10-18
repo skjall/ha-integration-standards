@@ -20,6 +20,7 @@ from _ha_standards.checks import (  # noqa: E402
     coverage,
     quality_scale,
     release_config,
+    settings,
 )
 
 USAGE = """usage: run.py <gate> [arguments]
@@ -28,6 +29,7 @@ USAGE = """usage: run.py <gate> [arguments]
   coverage         the per-module coverage floors the claimed tier requires
   commit-message   Conventional Commits, in English
   release-config   the next version can only be the honest one
+  settings         GitHub takes no direct push to the default branch
   tests            the suite, in Docker, against the targeted Home Assistant
   types            mypy --strict, in the same container
   verify           the vendored files are the ones that were synced
@@ -81,6 +83,8 @@ def main(argv: list[str]) -> int:
         return commit_message.main(rest)
     if gate == "release-config":
         return release_config.main(rest)
+    if gate == "settings":
+        return settings.main(rest)
     if gate == "verify":
         return _verify()
     if gate == "version":

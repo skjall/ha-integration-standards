@@ -68,7 +68,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         for reason in settings:
             print(f"  FAIL  {reason}")
     else:
-        print("Repository settings: the ruleset requires what the workflows report.")
+        print(
+            "Repository settings: pull requests only, and the ruleset requires "
+            "what the workflows report."
+        )
 
     return 1 if failed else 0
 
@@ -113,7 +116,9 @@ def cmd_protect(args: argparse.Namespace) -> int:
     if done.before is None:
         print("\nThe branch was unprotected until now.")
     print(f"\nRuleset '{done.branch}' {done.ruleset}: pull requests only,")
-    print("  no force-push, no deletion, the same checks.")
+    print("  no force-push, no deletion, the same checks. Administrators may")
+    print("  merge a pull request past a check, but cannot push, force-push")
+    print(f"  or delete {done.branch} directly.")
     if done.legacy_removed:
         print("Branch protection removed: it required the same checks a second")
         print("  time, which GitHub lists twice and lets drift apart.")
@@ -162,7 +167,8 @@ def cmd_adopt(args: argparse.Namespace) -> int:
     for path in sync.write(it):
         print(f"  updated  {path}")
     print(
-        "\nNothing else was touched. Run the gates once to see where the "
+        "\nNothing else was touched. Run 'pre-commit install' again, so the\n"
+        "push gate is installed too, and the gates once to see where the "
         "integration stands:\n"
         "  ha-quality-scale && ha-tests && ha-coverage"
     )
@@ -212,13 +218,17 @@ def cmd_new(args: argparse.Namespace) -> int:
     sync.ensure_precommit(it)
     sync.ensure_claude_import(it)
     print(f"Created {target}\n")
+    slug = f"{values['owner']}/{values['repo']}"
     print("Next:")
-    print("  git init && git add -A")
+    print("  git init -b main && git add -A")
     print("  python3 -m venv .venv && .venv/bin/pip install pre-commit")
     print("  .venv/bin/pre-commit install")
-    print("Once the repository exists on GitHub and main is pushed:")
-    print("  ha-standards protect      # not optional: nothing else protects main")
-    print("  ha-standards check        # says so if that never happened")
+    print('  git commit -m "feat: start the integration"')
+    print("Create the repository with the first push, and protect it straight away:")
+    print(f"  gh repo create {slug} --public --source . --push")
+    print("  ha-standards protect      # the push gate refuses every later push")
+    print("                            # until this has run")
+    print("From then on every change reaches main through a pull request.")
     print("With a package under lib/, protect also prints what to register on")
     print("pypi.org before the first release - only the account owner can.")
     return 0

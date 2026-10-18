@@ -323,13 +323,31 @@ whenever a job is added or renamed.
 **A new repository is unprotected until this runs.** Nothing else sets the
 protection up, and the repository gives no sign of it: `main` accepts a direct
 push, a force-push, a deletion. So `ha-standards protect` belongs to creating
-the repository, straight after the first push of `main`, as much as `git init`
-does. The same run also sets up what every integration here needs around the
+the repository as much as `git init` does - straight after the first push,
+and from then on every change reaches `main` through a pull request:
+
+```bash
+gh repo create owner/name --public --source . --push   # creates main
+ha-standards protect                                   # straight away
+```
+
+**Why after the first push and not before it:** that push is the one that
+creates `main`. Whether GitHub lets a push create a branch that a ruleset
+already reserves for pull requests is not documented, and the order of a new
+repository must not hang on undocumented behaviour. The push gate covers the
+gap: it lets a push through while the default branch does not exist on
+GitHub yet, and refuses every push after it until `protect` has run.
+
+The same run also sets up what every integration here needs around the
 checks:
 
 - the **ruleset** itself on the default branch: pull requests only, no
-  force-push, no deletion, and the checks above. No approval is required and
-  administrators may bypass it — one maintainer has nobody to wait for;
+  force-push, no deletion, and the checks above. No approval is required —
+  one maintainer has nobody to wait for. Administrators may bypass it **for
+  pull requests only**: they can merge a pull request past a check, but
+  cannot push, force-push or delete the default branch directly. That
+  includes every automation running under the maintainer's own login, which
+  is exactly what an administrator's bypass would otherwise let through;
 - **workflow permissions** that let release-please open its release pull
   request, which GitHub otherwise refuses;
 - where `lib/` builds a package, the **`pypi` environment** its publishing job
@@ -345,11 +363,23 @@ that was never made or has drifted since is reported rather than waited for:
 ha-standards check              # managed files and repository settings
 ```
 
-It names a branch no ruleset covers, a check the ruleset requires that no
-workflow reports any more, a job that runs without anything requiring it, and
-a leftover branch protection duplicating the ruleset. Where GitHub cannot be
-asked - no `gh`, no credentials, a pull request from a fork - it says so and
-passes, because a contributor who cannot see a setting cannot have broken it.
+It names a branch no ruleset covers, a ruleset that is not enforced or lacks
+one of `pull_request`, `non_fast_forward` and `deletion`, a bypass that is not
+limited to pull requests, a check the ruleset requires that no workflow
+reports any more, a job that runs without anything requiring it, and a
+leftover branch protection duplicating the ruleset. Where GitHub cannot be
+asked - no `gh`, no credentials, no remote, a repository you cannot push to,
+a pull request from a fork - it says so and passes, because a contributor who
+cannot see a setting cannot have broken it.
+
+**`protect` is not left to memory.** The `ha-settings` hook runs the same
+audit on every `git push` (`run.py settings`, installed as a `pre-push`
+hook) and refuses the push while the default branch can be changed other
+than through a pull request: no ruleset, a ruleset that is not enforced, a
+rule missing, or a bypass that is always on. The fix it names is
+`ha-standards protect`. A check that merely drifted does not stop a push -
+that is `check`'s to report. Where GitHub cannot be asked, or the default
+branch does not exist there yet, the push goes through.
 
 Each step reads what is there and writes what is wanted, so running it again
 is always safe.

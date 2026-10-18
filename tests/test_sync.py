@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+import yaml
 
 from ha_integration_standards import sync
 from ha_integration_standards.cli import main
@@ -163,3 +167,99 @@ def test_the_type_gate_reads_the_managed_config(project: Path) -> None:
     main(["sync", str(project)])
     gate = (project / "scripts" / "_ha_standards" / "runner.py").read_text()
     assert "--config-file mypy.ini" in gate
+
+
+def _hooks(project: Path) -> dict[str, dict[str, object]]:
+    config = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())
+    return {hook["id"]: hook for repo in config["repos"] for hook in repo["hooks"]}
+
+
+def test_a_new_hook_file_installs_the_push_gate(project: Path) -> None:
+    """A hook type that is not installed never runs - and says nothing."""
+    sync.ensure_precommit(find_integration(project))
+    config = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())
+
+    assert config["default_install_hook_types"] == [
+        "pre-commit",
+        "commit-msg",
+        "pre-push",
+    ]
+    hook = _hooks(project)["ha-settings"]
+    assert hook["entry"] == "python3 scripts/_ha_standards/run.py settings"
+    assert hook["stages"] == ["pre-push"]
+    assert hook["pass_filenames"] is False
+    assert hook["always_run"] is True
+
+
+def test_an_existing_hook_file_gains_the_push_hook_type(project: Path) -> None:
+    (project / ".pre-commit-config.yaml").write_text(
+        "default_install_hook_types: [pre-commit, commit-msg]\n"
+        "repos:\n"
+        "  - repo: https://github.com/astral-sh/ruff-pre-commit\n"
+        "    rev: v0.16.8\n"
+        "    hooks:\n"
+        "      - id: ruff-check\n"
+    )
+    sync.ensure_precommit(find_integration(project))
+    config = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())
+
+    assert config["default_install_hook_types"] == [
+        "pre-commit",
+        "commit-msg",
+        "pre-push",
+    ]
+    assert {"ruff-check", "ha-settings"} <= set(_hooks(project))
+
+
+def test_a_hook_type_the_project_chose_itself_stays(project: Path) -> None:
+    (project / ".pre-commit-config.yaml").write_text(
+        "default_install_hook_types: [pre-commit, post-checkout]\nrepos:\n"
+    )
+    sync.ensure_precommit(find_integration(project))
+    config = yaml.safe_load((project / ".pre-commit-config.yaml").read_text())
+
+    assert config["default_install_hook_types"] == [
+        "pre-commit",
+        "post-checkout",
+        "commit-msg",
+        "pre-push",
+    ]
+
+
+def test_the_settings_gate_travels_with_the_project(project: Path) -> None:
+    """Without gh it cannot ask GitHub, and a push is not refused over that."""
+    main(["sync", str(project)])
+    result = subprocess.run(
+        [sys.executable, str(project / "scripts/_ha_standards/run.py"), "settings"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": ""},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "GitHub could not be asked" in result.stdout
+
+
+def test_a_new_integration_is_protected_straight_after_its_first_push(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The first push creates main, and protect follows straight after it."""
+    target = tmp_path / "acme"
+    assert (
+        main(["new", str(target), "--domain", "acme_kettle", "--owner", "example"]) == 0
+    )
+    out = capsys.readouterr().out
+    first_commit = 'git commit -m "feat: start the integration"'
+    create = (
+        "gh repo create example/home-assistant-acme-kettle --public --source . --push"
+    )
+    assert first_commit in out
+    assert create in out
+    assert out.index(first_commit) < out.index(create)
+    assert out.index(create) < out.index("ha-standards protect")
+    assert "through a pull request" in out
+    assert "git push" not in out
+
+    config = yaml.safe_load((target / ".pre-commit-config.yaml").read_text())
+    assert "pre-push" in config["default_install_hook_types"]
+    assert "ha-settings" in _hooks(target)

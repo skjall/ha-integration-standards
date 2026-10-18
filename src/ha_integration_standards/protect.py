@@ -28,8 +28,12 @@ every integration of this family needs:
 - a ruleset on the default branch: changes arrive through a pull request, the
   branch cannot be force-pushed or deleted, and the same checks must pass,
   with a branch made to catch up with the base first. No approval is
-  required, and administrators may bypass it - one maintainer has nobody to
-  wait for;
+  required - one maintainer has nobody to wait for. Administrators may
+  bypass it for pull requests only: they can merge one past a check, but
+  cannot push, force-push or delete the default branch directly. A bypass
+  that is always on is no protection at all against an administrator's own
+  login, and that is the login every automation on the maintainer's machine
+  pushes with - it once put twelve commits straight onto a public `main`;
 - workflow permissions that let release-please open its release pull request;
 - where lib/ builds a package, the 'pypi' environment its publishing job runs
   in, limited to the default branch and to release tags.
@@ -43,13 +47,16 @@ exactly what to enter on pypi.org.
 
 Every step reads what is there and writes what is wanted, so running it again
 changes nothing that is already right.
+
+Reading what is there is shared with the gates: `checks/settings.py` holds
+the audit, and the vendored copy of it refuses a push while the default
+branch can be pushed to directly. That is what makes this run happen for
+every repository rather than for the ones somebody remembered.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
 import tomllib
 import urllib.error
 import urllib.request
@@ -58,13 +65,40 @@ from pathlib import Path
 
 import yaml
 
-WORKFLOWS = Path(".github/workflows")
+from .checks import settings
+
+# The reading half lives with the gates, so the vendored copy can run the
+# audit on every push with nothing installed. These names stay importable
+# from here for everything that used them before.
+from .checks.settings import (
+    WORKFLOWS,
+    NoGhError,
+    audit,
+    contexts,
+    current,
+    default_branch,
+    slug,
+)
+
+__all__ = [
+    "PYPI_PUBLISHING",
+    "WORKFLOWS",
+    "NoGhError",
+    "Protection",
+    "Publisher",
+    "apply",
+    "audit",
+    "contexts",
+    "current",
+    "default_branch",
+    "on_pypi",
+    "packages",
+    "publishing_workflow",
+    "slug",
+]
+
 PYPI_PUBLISHING = "https://pypi.org/manage/account/publishing/"
 _PUBLISH_ACTION = "pypa/gh-action-pypi-publish"
-
-
-class NoGhError(Exception):
-    """The GitHub CLI is missing, not logged in, or refused the call."""
 
 
 @dataclass(frozen=True)
@@ -110,107 +144,6 @@ class Protection:
         return tuple(c for c in self.contexts if c not in (self.before or ()))
 
 
-def _triggers_on_pull_request(workflow: dict) -> bool:
-    """Report whether the workflow runs on a pull request."""
-    # An unquoted 'on:' is the YAML 1.1 boolean True, so look under both keys.
-    triggers = workflow.get("on", workflow.get(True))
-    if isinstance(triggers, str):
-        return triggers == "pull_request"
-    if isinstance(triggers, list | dict):
-        return "pull_request" in triggers
-    return False
-
-
-def contexts(root: Path) -> tuple[str, ...]:
-    """Return the check names a pull request in this repository reports.
-
-    The context GitHub records is the job id, unless the job gives itself a
-    name. A matrix job reports one context per combination, with the values
-    in brackets - which is how 'test (3.13)' outlived the workflow that
-    produced it. Those are left out rather than guessed at: naming one
-    wrongly would be the very failure this command exists to fix.
-    """
-    found: list[str] = []
-    for path in sorted((root / WORKFLOWS).glob("*.y*ml")):
-        try:
-            workflow = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except yaml.YAMLError:
-            continue
-        if not isinstance(workflow, dict) or not _triggers_on_pull_request(workflow):
-            continue
-        for job_id, job in (workflow.get("jobs") or {}).items():
-            if not isinstance(job, dict):
-                continue
-            if "matrix" in (job.get("strategy") or {}):
-                continue
-            found.append(str(job.get("name") or job_id))
-    # dict.fromkeys keeps the first spelling of a name two workflows share.
-    return tuple(dict.fromkeys(found))
-
-
-def _gh(*args: str, stdin: str | None = None, cwd: Path | None = None) -> str:
-    """Run the GitHub CLI; raise NoGhError when it is unusable or refuses.
-
-    cwd matters: `gh repo view` without a slug reports whatever repository
-    the working directory belongs to, which is not necessarily the one being
-    protected.
-    """
-    if shutil.which("gh") is None:
-        raise NoGhError("the GitHub CLI ('gh') is not installed")
-    done = subprocess.run(
-        ["gh", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        input=stdin,
-        cwd=cwd,
-    )
-    if done.returncode != 0:
-        raise NoGhError(done.stderr.strip() or f"gh {args[0]} failed")
-    return done.stdout
-
-
-def slug(root: Path, repo: str | None = None) -> str:
-    """Return owner/name for the repository being worked on."""
-    if repo:
-        return repo
-    return _gh(
-        "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner", cwd=root
-    ).strip()
-
-
-def default_branch(repo: str) -> str:
-    """Ask GitHub which branch the protection belongs on."""
-    return _gh(
-        "repo",
-        "view",
-        repo,
-        "--json",
-        "defaultBranchRef",
-        "-q",
-        ".defaultBranchRef.name",
-    ).strip()
-
-
-def _ruleset_id(repo: str, branch: str) -> int | None:
-    """Return the id of the ruleset this package keeps, if it is there."""
-    existing = json.loads(_gh("api", f"repos/{repo}/rulesets") or "[]")
-    return next((r["id"] for r in existing if r.get("name") == branch), None)
-
-
-def current(repo: str, branch: str) -> tuple[str, ...] | None:
-    """Return the contexts the branch requires now, or None when nothing does."""
-    match = _ruleset_id(repo, branch)
-    if match is None:
-        return None
-    detail = json.loads(_gh("api", f"repos/{repo}/rulesets/{match}") or "{}")
-    for rule in detail.get("rules", []):
-        if rule.get("type") == "required_status_checks":
-            checks = rule.get("parameters", {}).get("required_status_checks", [])
-            return tuple(check["context"] for check in checks)
-    return ()
-
-
 def _drop_branch_protection(repo: str, branch: str) -> bool:
     """Remove a branch protection the ruleset has made redundant.
 
@@ -219,7 +152,7 @@ def _drop_branch_protection(repo: str, branch: str) -> bool:
     nobody can say which set actually has to pass.
     """
     try:
-        _gh(
+        settings._gh(
             "api",
             "--method",
             "DELETE",
@@ -230,59 +163,6 @@ def _drop_branch_protection(repo: str, branch: str) -> bool:
         # No protection to remove answers 404, which is the wanted state.
         return False
     return True
-
-
-def audit(root: Path, repo: str | None = None) -> tuple[str, ...] | None:
-    """Return what is wrong with the repository's settings, if anything.
-
-    `check` runs on every commit; `protect` runs when somebody remembers. So
-    the settings drift the same way a managed file drifts, and until now
-    nothing said so: an integration adopted before a rule changed kept the old
-    one for as long as nobody read the merge box. Two repositories carried a
-    duplicated set of checks for months that way.
-
-    Returns None when GitHub cannot be asked at all - no CLI, no credentials,
-    a fork's pull request. Not knowing is not the same as being wrong, and a
-    contributor who cannot see the settings must not be told their commit
-    broke them.
-    """
-    wanted = contexts(root)
-    if not wanted:
-        return ()
-    try:
-        name = slug(root, repo)
-        branch = default_branch(name)
-        required = current(name, branch)
-    except NoGhError:
-        return None
-
-    problems: list[str] = []
-    if required is None:
-        problems.append(
-            f"no ruleset on {branch}: it accepts a direct push, a force-push "
-            "and a deletion. Run 'ha-standards protect'."
-        )
-    elif set(required) != set(wanted):
-        missing = sorted(set(wanted) - set(required))
-        stale = sorted(set(required) - set(wanted))
-        if missing:
-            problems.append(f"not required, though reported: {', '.join(missing)}")
-        if stale:
-            problems.append(
-                f"required, though nothing reports them: {', '.join(stale)}"
-            )
-
-    try:
-        _gh("api", f"repos/{name}/branches/{branch}/protection", "--silent")
-    except NoGhError:
-        pass  # No branch protection is the wanted state.
-    else:
-        problems.append(
-            "a branch protection requires checks a second time, next to the "
-            "ruleset. GitHub lists every check twice and the two can drift "
-            "apart. Run 'ha-standards protect'."
-        )
-    return tuple(problems)
 
 
 def apply(root: Path, repo: str | None = None) -> Protection:
@@ -297,7 +177,7 @@ def apply(root: Path, repo: str | None = None) -> Protection:
 
     ruleset = _ruleset(name, branch, wanted)
     legacy = _drop_branch_protection(name, branch)
-    _gh(
+    settings._gh(
         "api",
         "--method",
         "PUT",
@@ -322,10 +202,6 @@ def apply(root: Path, repo: str | None = None) -> Protection:
     )
 
 
-# GitHub's id for the repository admin role, the one that may bypass.
-_ADMIN_ROLE = 5
-
-
 def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
     """Create or update the default branch's ruleset; say which it was.
 
@@ -339,9 +215,12 @@ def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
         "conditions": {"ref_name": {"include": ["~DEFAULT_BRANCH"], "exclude": []}},
         "bypass_actors": [
             {
-                "actor_id": _ADMIN_ROLE,
+                "actor_id": settings.ADMIN_ROLE,
                 "actor_type": "RepositoryRole",
-                "bypass_mode": "always",
+                # Past a failing check through a pull request, never around
+                # one: an administrator's login is also the one every
+                # automation on the maintainer's machine pushes with.
+                "bypass_mode": settings.PULL_REQUEST_ONLY,
             }
         ],
         "rules": [
@@ -367,12 +246,12 @@ def _ruleset(repo: str, branch: str, wanted: tuple[str, ...]) -> str:
             },
         ],
     }
-    match = _ruleset_id(repo, branch)
+    match = settings._ruleset_id(repo, branch)
     if match is None:
         path, method, outcome = f"repos/{repo}/rulesets", "POST", "created"
     else:
         path, method, outcome = f"repos/{repo}/rulesets/{match}", "PUT", "updated"
-    _gh(
+    settings._gh(
         "api",
         "--method",
         method,
@@ -396,7 +275,7 @@ def _pypi_environment(root: Path, repo: str, branch: str) -> tuple[Publisher, ..
     names = packages(root)
     if not names:
         return ()
-    _gh(
+    settings._gh(
         "api",
         "--method",
         "PUT",
@@ -413,14 +292,16 @@ def _pypi_environment(root: Path, repo: str, branch: str) -> tuple[Publisher, ..
             }
         ),
     )
-    raw = _gh("api", f"repos/{repo}/environments/pypi/deployment-branch-policies")
+    raw = settings._gh(
+        "api", f"repos/{repo}/environments/pypi/deployment-branch-policies"
+    )
     have = {
         (p.get("name"), p.get("type", "branch"))
         for p in json.loads(raw or "{}").get("branch_policies", [])
     }
     for name, kind in ((branch, "branch"), ("v*", "tag")):
         if (name, kind) not in have:
-            _gh(
+            settings._gh(
                 "api",
                 "--method",
                 "POST",

@@ -86,7 +86,21 @@ PRECOMMIT_BLOCK = """  - repo: local
         entry: python3 {vendor}/run.py commit-message
         language: system
         stages: [commit-msg]
+
+      # Nothing else makes sure 'ha-standards protect' ever ran. Where GitHub
+      # cannot be asked - no remote yet, no gh, no rights - it passes.
+      - id: ha-settings
+        name: Settings - GitHub takes no direct push to the default branch
+        entry: python3 {vendor}/run.py settings
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true
 """
+
+# The hook types the gates need installed: the settings gate runs on a push,
+# and a hook whose type is not installed never runs at all - silently.
+HOOK_TYPES = ("pre-commit", "commit-msg", "pre-push")
 
 
 # What the image build needs when the project builds its own package. The
@@ -217,20 +231,22 @@ def ensure_precommit(it: Integration, version: str = __version__) -> str | None:
     """Put the gates into .pre-commit-config.yaml, or refresh them.
 
     Everything else in the file is left exactly as it is: other hooks, other
-    repos, the project's own ordering.
+    repos, the project's own ordering. The one exception is the list of hook
+    types to install, which gains any the gates need and it lacks.
     """
     path = it.root / ".pre-commit-config.yaml"
     block = PRECOMMIT_BLOCK.format(version=version, vendor=vendor.VENDOR)
 
     if not path.exists():
         path.write_text(
-            "default_install_hook_types: [pre-commit, commit-msg]\n"
+            f"default_install_hook_types: [{', '.join(HOOK_TYPES)}]\n"
             "default_stages: [pre-commit]\n\nrepos:\n" + block,
             encoding="utf-8",
         )
         return "created"
 
-    text = path.read_text(encoding="utf-8")
+    original = path.read_text(encoding="utf-8")
+    text = _with_hook_types(original)
     if MARKER in text:
         # Replace the whole block: which gates exist is this package's call,
         # not the project's, and a stale list would silently drop one.
@@ -245,7 +261,7 @@ def ensure_precommit(it: Integration, version: str = __version__) -> str | None:
         end = text.find("  - repo: ", start + 10)
         end = len(text) if end == -1 else end
         updated = text[:start] + block + text[end:]
-        if updated == text:
+        if updated == original:
             return None
         path.write_text(updated, encoding="utf-8")
         return f"gates refreshed for {version}"
@@ -255,6 +271,27 @@ def ensure_precommit(it: Integration, version: str = __version__) -> str | None:
     text = text.replace("repos:\n", "repos:\n" + block, 1)
     path.write_text(text, encoding="utf-8")
     return "hooks added"
+
+
+def _with_hook_types(text: str) -> str:
+    """Make `pre-commit install` install every hook type the gates use.
+
+    The one line outside the block this package touches, because without it
+    the push gate is written down and never runs: pre-commit installs only
+    the types listed here. A type the project listed itself stays.
+    """
+    match = re.search(r"^default_install_hook_types:[ \t]*\[([^\]\n]*)\]", text, re.M)
+    if match is None:
+        if re.search(r"^default_install_hook_types:", text, re.M):
+            # A block-style list: rewriting it would mean parsing it.
+            return text
+        return f"default_install_hook_types: [{', '.join(HOOK_TYPES)}]\n" + text
+    listed = [item.strip() for item in match.group(1).split(",") if item.strip()]
+    wanted = listed + [kind for kind in HOOK_TYPES if kind not in listed]
+    if wanted == listed:
+        return text
+    line = f"default_install_hook_types: [{', '.join(wanted)}]"
+    return text[: match.start()] + line + text[match.end() :]
 
 
 def ensure_claude_import(it: Integration) -> str | None:

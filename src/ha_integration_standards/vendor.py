@@ -36,6 +36,7 @@ MODULES = (
     "checks/coverage.py",
     "checks/quality_scale.py",
     "checks/release_config.py",
+    "checks/settings.py",
 )
 
 HEADER = (
